@@ -18,15 +18,17 @@ module.exports = {
     if (!allRoleIds.length)
       return message.reply({ embeds: [errorEmbed('No roles configured in v1/v2/v3.')] });
 
-    // Load snapshot
+    // Read directly from MongoDB to bypass any Mongoose caching issues
+    const freshConfig = await GuildConfig.collection.findOne({ guildId: message.guild.id });
+    console.log('Fresh config savedRolePerms:', freshConfig?.savedRolePerms);
+
+    const raw = freshConfig?.savedRolePerms;
+    if (!raw || raw === '' || raw === '{}') {
+      return message.reply({ embeds: [errorEmbed('No saved snapshot found. Run `.off` first to save permissions, then `.on` to restore.')] });
+    }
+
     let snapshot = {};
     try {
-      const raw = config.savedRolePerms;
-      console.log('Raw snapshot from DB:', raw);
-
-      if (!raw || raw === '' || raw === '{}') {
-        return message.reply({ embeds: [errorEmbed('No saved snapshot found. Run `.off` first to save permissions, then `.on` to restore.')] });
-      }
       snapshot = JSON.parse(raw);
     } catch (e) {
       console.error('Failed to parse snapshot:', e.message);
@@ -47,9 +49,8 @@ module.exports = {
     let rolesRestored = 0;
     let botsRestored = 0;
     const failed = [];
-    const details = [];
+    const restored = [];
 
-    // Restore each role to its OWN saved permissions
     for (const roleId of snapshotRoleIds) {
       const role = message.guild.roles.cache.get(roleId);
       if (!role) continue;
@@ -58,9 +59,9 @@ module.exports = {
       if (!bitfield) continue;
 
       try {
-        console.log(`Restoring role ${role.name} (${roleId}) to bitfield: ${bitfield}`);
+        // Restore this role's exact original permissions
         await role.setPermissions(BigInt(bitfield), `Admin perms ON by ${message.author.tag}`);
-        details.push(`${role.name}`);
+        restored.push(role.name);
         rolesRestored++;
 
         // Remove bot channel overwrites
@@ -73,12 +74,12 @@ module.exports = {
           const channels = message.guild.channels.cache.filter(c => c.type !== 4);
           for (const [, ch] of channels) {
             const overwrite = ch.permissionOverwrites.cache.get(botManagedRole.id);
-            if (overwrite) await ch.permissionOverwrites.delete(botManagedRole, `Bot re-enabled via .on`).catch(() => {});
+            if (overwrite) await ch.permissionOverwrites.delete(botManagedRole).catch(() => {});
           }
           botsRestored++;
         }
 
-        // Remove individual member overwrites (ST/IC cleanup)
+        // Remove ST/IC individual overwrites
         const channels = message.guild.channels.cache.filter(c => c.type !== 4);
         const membersInRole = message.guild.members.cache.filter(m =>
           !m.user.bot && m.roles.cache.has(roleId)
@@ -86,21 +87,20 @@ module.exports = {
         for (const [, member] of membersInRole) {
           for (const [, ch] of channels) {
             const overwrite = ch.permissionOverwrites.cache.get(member.id);
-            if (overwrite) await ch.permissionOverwrites.delete(member.id, `Cleanup after .on`).catch(() => {});
+            if (overwrite) await ch.permissionOverwrites.delete(member.id).catch(() => {});
           }
         }
 
       } catch (err) {
         failed.push(role?.name || roleId);
-        console.error(`on.js error on role ${roleId}:`, err.message);
+        console.error(`on.js error on ${roleId}:`, err.message);
       }
     }
 
     // Clear snapshot from DB
-    await GuildConfig.findOneAndUpdate(
+    await GuildConfig.collection.updateOne(
       { guildId: message.guild.id },
-      { adminPermsEnabled: true, savedRolePerms: '' },
-      { new: true }
+      { $set: { adminPermsEnabled: true, savedRolePerms: '' } }
     );
 
     await logAction(message.guild, {
@@ -116,7 +116,7 @@ module.exports = {
       embeds: [successEmbed(
         `Individual permissions **restored** on **${rolesRestored}** roles.\n` +
         `**${botsRestored}** bots re-enabled.\n` +
-        (details.length ? `Roles restored: ${details.map(n => `\`${n}\``).join(', ')}` : '') +
+        `Roles: ${restored.map(n => `\`${n}\``).join(', ')}` +
         failText
       )]
     });

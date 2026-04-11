@@ -23,7 +23,6 @@ module.exports = {
       embeds: [{ color: 0x5865F2, description: `⏳ Saving snapshot and stripping **${allRoleIds.length}** roles...` }]
     });
 
-    // Get protected users
     const protectedUsers = await UserData.find({
       guildId: message.guild.id,
       $or: [{ isSecret: true }, { isInnerCircle: true }],
@@ -37,9 +36,6 @@ module.exports = {
     let rolesUpdated = 0;
     let botsDisabled = 0;
     const failed = [];
-
-    // Build snapshot: { roleId: bitfieldString, roleId: bitfieldString, ... }
-    // Each role gets its OWN individual bitfield saved
     const snapshot = {};
 
     for (const roleId of allRoleIds) {
@@ -47,9 +43,8 @@ module.exports = {
       if (!role) continue;
 
       try {
-        // Save THIS role's specific permissions before touching anything
+        // Save this role's unique permissions
         snapshot[roleId] = role.permissions.bitfield.toString();
-        console.log(`Saved perms for role ${role.name} (${roleId}): ${snapshot[roleId]}`);
 
         // Strip to zero
         await role.setPermissions(BigInt(0), `Admin perms OFF by ${message.author.tag}`);
@@ -76,7 +71,7 @@ module.exports = {
           botsDisabled++;
         }
 
-        // Protect ST/IC members with individual overwrites
+        // Protect ST/IC members
         const protectedInRole = message.guild.members.cache.filter(m =>
           !m.user.bot && m.roles.cache.has(roleId) && protectedIds.has(m.id)
         );
@@ -95,34 +90,34 @@ module.exports = {
 
       } catch (err) {
         failed.push(role?.name || roleId);
-        console.error(`off.js error on role ${roleId}:`, err.message);
       }
     }
 
-    // Save snapshot to DB as JSON string
+    // Use direct MongoDB update with $set to guarantee it saves
     const snapshotStr = JSON.stringify(snapshot);
-    console.log('Saving snapshot:', snapshotStr);
-
-    await GuildConfig.findOneAndUpdate(
+    await GuildConfig.collection.updateOne(
       { guildId: message.guild.id },
-      { adminPermsEnabled: false, savedRolePerms: snapshotStr },
-      { new: true }
+      { $set: { adminPermsEnabled: false, savedRolePerms: snapshotStr } }
     );
+
+    // Verify it saved
+    const verify = await GuildConfig.findOne({ guildId: message.guild.id }).lean();
+    console.log('Verified saved snapshot:', verify?.savedRolePerms);
 
     await logAction(message.guild, {
       action: 'Admin Perms OFF',
       moderator: message.author.id,
       target: null,
-      reason: `Stripped ${rolesUpdated} roles, saved snapshot`,
+      reason: `Stripped ${rolesUpdated} roles`,
       color: 0xED4245,
     });
 
-    const failText = failed.length ? `\n⚠️ Failed: ${failed.map(n => `\`${n}\``).join(', ')}` : '';
+    const failText = failed.length ? `\n⚠️ Failed (above bot or managed): ${failed.map(n => `\`${n}\``).join(', ')}` : '';
     return status.edit({
       embeds: [successEmbed(
         `Permissions **stripped** from **${rolesUpdated}** roles.\n` +
         `**${botsDisabled}** bots locked out.\n` +
-        `✅ Each role's unique permissions saved — use \`.on\` to restore individually.` +
+        `✅ Snapshot saved — use \`.on\` to restore each role individually.` +
         failText
       )]
     });
