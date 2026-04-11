@@ -3,33 +3,11 @@ const { successEmbed, errorEmbed } = require('../../utils/embeds');
 const { logAction } = require('../../utils/logger');
 const GuildConfig = require('../../models/GuildConfig');
 const UserData = require('../../models/UserData');
-const { PermissionsBitField } = require('discord.js');
-
-const STRIP_PERMS = [
-  PermissionsBitField.Flags.Administrator,
-  PermissionsBitField.Flags.KickMembers,
-  PermissionsBitField.Flags.BanMembers,
-  PermissionsBitField.Flags.ModerateMembers,
-  PermissionsBitField.Flags.ManageGuild,
-  PermissionsBitField.Flags.MuteMembers,
-  PermissionsBitField.Flags.DeafenMembers,
-  PermissionsBitField.Flags.MoveMembers,
-  PermissionsBitField.Flags.ViewAuditLog,
-  PermissionsBitField.Flags.ChangeNickname,
-  PermissionsBitField.Flags.ManageNicknames,
-  PermissionsBitField.Flags.MentionEveryone,
-  PermissionsBitField.Flags.ManageMessages,
-  PermissionsBitField.Flags.ManageRoles,
-  PermissionsBitField.Flags.ManageChannels,
-  PermissionsBitField.Flags.ManageWebhooks,
-  PermissionsBitField.Flags.ManageEmojisAndStickers,
-  PermissionsBitField.Flags.SendTTSMessages,
-];
 
 module.exports = {
   name: 'off',
   category: 'admin',
-  description: 'Strip ALL admin/mod perms from v1/v2/v3 roles and their bots (ST + inner circle are immune)',
+  description: 'Strip ALL perms from every role in v1/v2/v3 — saves each role individually',
   usage: '.off',
   example: '.off',
 
@@ -42,121 +20,109 @@ module.exports = {
       return message.reply({ embeds: [errorEmbed('No roles configured in v1/v2/v3.')] });
 
     const status = await message.reply({
-      embeds: [{ color: 0x5865F2, description: '⏳ Stripping permissions... (ST and inner circle are immune)' }]
+      embeds: [{ color: 0x5865F2, description: `⏳ Saving snapshot and stripping **${allRoleIds.length}** roles...` }]
     });
 
-    // Fetch all protected users (ST + inner circle) so we can skip them
+    // Get protected users
     const protectedUsers = await UserData.find({
       guildId: message.guild.id,
       $or: [{ isSecret: true }, { isInnerCircle: true }],
     }).lean();
     const protectedIds = new Set(protectedUsers.map(u => u.userId));
-
-    // Also always protect the bot owner
     const ownerIds = (process.env.OWNER_IDS || '').split(',').map(s => s.trim());
     for (const id of ownerIds) protectedIds.add(id);
+
+    await message.guild.members.fetch();
 
     let rolesUpdated = 0;
     let botsDisabled = 0;
     const failed = [];
 
-    await message.guild.members.fetch();
+    // Build snapshot: { roleId: bitfieldString, roleId: bitfieldString, ... }
+    // Each role gets its OWN individual bitfield saved
+    const snapshot = {};
 
     for (const roleId of allRoleIds) {
       const role = message.guild.roles.cache.get(roleId);
       if (!role) continue;
 
       try {
-        // Strip perms from the role itself
-        let newBits = role.permissions.bitfield;
-        for (const perm of STRIP_PERMS) newBits = newBits & ~perm;
-        await role.setPermissions(newBits, `Admin perms OFF by ${message.author.tag}`);
+        // Save THIS role's specific permissions before touching anything
+        snapshot[roleId] = role.permissions.bitfield.toString();
+        console.log(`Saved perms for role ${role.name} (${roleId}): ${snapshot[roleId]}`);
+
+        // Strip to zero
+        await role.setPermissions(BigInt(0), `Admin perms OFF by ${message.author.tag}`);
         rolesUpdated++;
 
-        // Find bots in this tier role
+        // Lock bots that have this role
         const botsWithRole = message.guild.members.cache.filter(m =>
           m.user.bot && m.roles.cache.has(roleId)
         );
-
         for (const [, botMember] of botsWithRole) {
-          // Skip if bot owner is somehow a bot (shouldn't happen but safety check)
           if (protectedIds.has(botMember.id)) continue;
-
           const botManagedRole = botMember.roles.cache.find(r => r.managed && r.id !== message.guild.id);
           if (!botManagedRole) continue;
-
-          // Deny permissions via channel overwrites (managed roles can't be edited directly)
           const channels = message.guild.channels.cache.filter(c => c.type !== 4);
           for (const [, ch] of channels) {
             await ch.permissionOverwrites.edit(botManagedRole, {
-              SendMessages:    false,
-              ManageMessages:  false,
-              ManageChannels:  false,
-              ManageRoles:     false,
-              BanMembers:      false,
-              KickMembers:     false,
-              ModerateMembers: false,
-              MuteMembers:     false,
-              DeafenMembers:   false,
-              MoveMembers:     false,
-              ManageWebhooks:  false,
-              MentionEveryone: false,
-              ViewAuditLog:    false,
-              ManageNicknames: false,
-            }, `Bot locked via .off by ${message.author.tag}`).catch(() => {});
+              SendMessages: false, ManageMessages: false, ManageChannels: false,
+              ManageRoles: false, BanMembers: false, KickMembers: false,
+              ModerateMembers: false, MuteMembers: false, DeafenMembers: false,
+              MoveMembers: false, ManageWebhooks: false, MentionEveryone: false,
+              ViewAuditLog: false, ManageNicknames: false, Administrator: false,
+            }, `Bot locked via .off`).catch(() => {});
           }
           botsDisabled++;
         }
 
-        // Now add individual channel overwrites for ST/inner circle members
-        // so they KEEP their permissions even though the role lost them
-        const protectedMembersInRole = message.guild.members.cache.filter(m =>
+        // Protect ST/IC members with individual overwrites
+        const protectedInRole = message.guild.members.cache.filter(m =>
           !m.user.bot && m.roles.cache.has(roleId) && protectedIds.has(m.id)
         );
-
-        if (protectedMembersInRole.size > 0) {
+        for (const [, member] of protectedInRole) {
           const channels = message.guild.channels.cache.filter(c => c.type !== 4);
-          for (const [, member] of protectedMembersInRole) {
-            for (const [, ch] of channels) {
-              await ch.permissionOverwrites.edit(member, {
-                SendMessages:    true,
-                ManageMessages:  true,
-                ManageChannels:  true,
-                BanMembers:      true,
-                KickMembers:     true,
-                ModerateMembers: true,
-                MuteMembers:     true,
-                DeafenMembers:   true,
-                MoveMembers:     true,
-                MentionEveryone: true,
-                ManageNicknames: true,
-                ViewAuditLog:    true,
-              }, `Preserving perms for ST/IC member via .off`).catch(() => {});
-            }
+          for (const [, ch] of channels) {
+            await ch.permissionOverwrites.edit(member, {
+              SendMessages: true, ManageMessages: true, ManageChannels: true,
+              BanMembers: true, KickMembers: true, ModerateMembers: true,
+              MuteMembers: true, DeafenMembers: true, MoveMembers: true,
+              MentionEveryone: true, ManageNicknames: true, ViewAuditLog: true,
+              ManageRoles: true, Administrator: true,
+            }, `Preserving perms for ST/IC via .off`).catch(() => {});
           }
         }
 
       } catch (err) {
         failed.push(role?.name || roleId);
+        console.error(`off.js error on role ${roleId}:`, err.message);
       }
     }
 
-    await GuildConfig.updateOne({ guildId: message.guild.id }, { adminPermsEnabled: false });
+    // Save snapshot to DB as JSON string
+    const snapshotStr = JSON.stringify(snapshot);
+    console.log('Saving snapshot:', snapshotStr);
+
+    await GuildConfig.findOneAndUpdate(
+      { guildId: message.guild.id },
+      { adminPermsEnabled: false, savedRolePerms: snapshotStr },
+      { new: true }
+    );
 
     await logAction(message.guild, {
       action: 'Admin Perms OFF',
       moderator: message.author.id,
       target: null,
-      reason: `Stripped ${rolesUpdated} roles, disabled ${botsDisabled} bots. ST/IC members immune.`,
+      reason: `Stripped ${rolesUpdated} roles, saved snapshot`,
       color: 0xED4245,
     });
 
-    const failText = failed.length ? `\n⚠️ Failed on: ${failed.map(n => `\`${n}\``).join(', ')}` : '';
+    const failText = failed.length ? `\n⚠️ Failed: ${failed.map(n => `\`${n}\``).join(', ')}` : '';
     return status.edit({
       embeds: [successEmbed(
-        `All admin/mod permissions **stripped** from **${rolesUpdated}** roles.\n` +
-        `**${botsDisabled}** bots in those tiers locked out.\n` +
-        `🛡️ **ST** and **inner circle** members kept their permissions.` +
+        `Permissions **stripped** from **${rolesUpdated}** roles.\n` +
+        `**${botsDisabled}** bots locked out.\n` +
+        `✅ Each role's unique permissions saved — use \`.on\` to restore individually.` +
         failText
       )]
     });
