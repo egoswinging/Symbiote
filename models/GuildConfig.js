@@ -30,10 +30,8 @@ const guildConfigSchema = new Schema({
 
   cleanChannels: { type: [String], default: [] },
 
-  // .allow — roles allowed to ping @everyone (up to 3x per 5min)
   allowedPingRoles: { type: [String], default: [] },
 
-  // automod word/link filter
   automod: {
     enabled:  { type: Boolean, default: false },
     words:    { type: [String], default: [] },
@@ -41,8 +39,10 @@ const guildConfigSchema = new Schema({
     channel:  { type: String, default: null },
   },
 
-  // admin perms toggle — when false, v1/v2/v3 roles have permissions stripped
   adminPermsEnabled: { type: Boolean, default: true },
+
+  // Stored as JSON string: [{ roleId, bitfield }]
+  savedRolePerms: { type: String, default: '' },
 
 }, { timestamps: true });
 

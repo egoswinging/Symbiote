@@ -1,9 +1,9 @@
 const { EmbedBuilder } = require('discord.js');
 const { paginate } = require('../../utils/embeds');
+const UserData = require('../../models/UserData');
 
 const PREFIX = process.env.PREFIX || '.';
 
-// Full command catalogue with examples
 const COMMAND_DATA = {
   admin: [
     { name: 'on',          desc: 'Enable ban/kick/timeout perms for ALL v1/v2/v3 roles',     example: '.on' },
@@ -15,7 +15,7 @@ const COMMAND_DATA = {
     { name: 'resetrole',   desc: 'Reset a role config key',                                   example: '.resetrole vanish' },
     { name: 'showconfig',  desc: 'Show the full server bot config',                           example: '.showconfig' },
     { name: 'rolelist',    desc: 'View all roles in a specific tier',                         example: '.rolelist v1' },
-    { name: 'antinuke',    desc: 'Manage the anti-nuke system',                               example: '.antinuke enable\n.antinuke set ban 3\n.antinuke whitelist add @John' },
+    { name: 'antinuke',    desc: 'Manage the anti-nuke system',                               example: '.antinuke enable' },
   ],
   moderation: [
     { name: 'wipe',          desc: 'Ban a user from the server',                              example: '.wipe @John rule breaking' },
@@ -23,7 +23,7 @@ const COMMAND_DATA = {
     { name: 'unwipeall',     desc: 'Unban everyone and reset the wipe list',                  example: '.unwipeall' },
     { name: 'wipelist',      desc: 'Show all wiped (banned) users',                           example: '.wipelist' },
     { name: 'click',         desc: 'Perma-ban — user is auto-rebanned if they rejoin',        example: '.click @John' },
-    { name: 'unclick',       desc: 'Remove the perma-ban from a user (inner circle only)',    example: '.unclick 123456789012345678' },
+    { name: 'unclick',       desc: 'Remove the perma-ban from a user',                        example: '.unclick 123456789012345678' },
     { name: 'vanish',        desc: 'Remove all roles and apply vanish role',                  example: '.vanish @John being toxic' },
     { name: 'unvanish',      desc: 'Remove the vanish role (roles NOT restored)',             example: '.unvanish @John' },
     { name: 'restorevanish', desc: 'Restore the roles a user had before being vanished',      example: '.restorevanish @John' },
@@ -38,7 +38,7 @@ const COMMAND_DATA = {
     { name: 'unshush',       desc: 'Stop auto-deleting messages from a shushed user',        example: '.unshush @John' },
     { name: 'blacklist',     desc: 'Block a user from using the bot',                         example: '.blacklist @John' },
     { name: 'bllist',        desc: 'Show all blacklisted users',                              example: '.bllist' },
-    { name: 'role',          desc: 'Give, remove, or create a role',                          example: '.role give @John @Mod\n.role remove @John @Mod\n.role create VIP' },
+    { name: 'role',          desc: 'Give, remove, or create a role',                          example: '.role give @John @Mod' },
     { name: 'inrole',        desc: 'Show all members with a specific role',                   example: '.inrole @Mod' },
     { name: 'roles',         desc: 'Show all roles in the server',                            example: '.roles' },
     { name: 'removeall',     desc: 'Remove a role from every member that has it',             example: '.removeall @Muted' },
@@ -48,46 +48,50 @@ const COMMAND_DATA = {
     { name: 'add',               desc: 'Add a user to the public whitelist',                  example: '.add @John' },
     { name: 'remove',            desc: 'Remove a user from the public whitelist',             example: '.remove @John' },
     { name: 'them',              desc: 'Show all whitelisted users',                          example: '.them' },
-    { name: 'st',                desc: 'Add a user to the ST list — safe from all bot actions', example: '.st @John' },
+    { name: 'st',                desc: 'Add a user to the ST list',                           example: '.st @John' },
     { name: 'unst',              desc: 'Remove a user from the ST list',                      example: '.unst @John' },
     { name: 'hidden',            desc: 'Show all users in the ST whitelist',                  example: '.hidden' },
-    { name: 'secret',            desc: 'Toggle owner role on yourself (bot owner only)',      example: '.secret' },
-    { name: 'innercircle',       desc: 'Grant a user full inner circle access (bot owner only)', example: '.innercircle @John' },
-    { name: 'innercirclelist',   desc: 'Show all inner circle members',                      example: '.innercirclelist' },
+    { name: 'secret',            desc: 'Toggle owner role on yourself',                       example: '.secret' },
+    { name: 'innercircle',       desc: 'Grant a user full inner circle access',               example: '.innercircle @John' },
+    { name: 'innercirclelist',   desc: 'Show all inner circle members',                       example: '.innercirclelist' },
     { name: 'removeinnercircle', desc: 'Remove a user from the inner circle',                 example: '.removeinnercircle @John' },
   ],
-  info: [
-    { name: 'ui',     desc: 'Show detailed user information',      example: '.ui @John' },
-    { name: 'si',     desc: 'Show server information',             example: '.si' },
-    { name: 'av',     desc: 'Show a user\'s avatar',               example: '.av @John' },
-    { name: 'banner', desc: 'Show a user\'s banner',               example: '.banner @John' },
-    { name: 'mc',     desc: 'Show the server member count',        example: '.mc' },
-  ],
   utility: [
-    { name: 'autoresponder', desc: 'Manage auto-responders (keyword → reply)',              example: '.ar add hello | Hello there!\n.ar remove hello\n.ar list' },
-    { name: 'automod',       desc: 'Manage automod word/link filter',                       example: '.automod add word badword\n.automod add link spam.com\n.automod enable' },
-    { name: 'allow',         desc: 'Set a role allowed to ping @everyone (3x per 5min)',    example: '.allow @Announcements' },
-    { name: 'setuplogger',   desc: 'Create and set the logging channel',                    example: '.setuplogger' },
-    { name: 'saveserver',    desc: 'Save the full server layout (channels + roles)',         example: '.saveserver' },
-    { name: 'serverload',    desc: 'Restore the server layout from backup',                 example: '.serverload' },
-    { name: 'resetsave',     desc: 'Delete the saved server backup',                        example: '.resetsave' },
-    { name: 's',             desc: 'Snipe the last deleted message',                        example: '.s' },
-    { name: 'cs',            desc: 'Clear the sniped message',                              example: '.cs' },
-    { name: 'c',             desc: 'Delete a number of messages (1-100)',                   example: '.c 50' },
-    { name: 'forcenick',     desc: 'Force or clear a nickname on a user',                   example: '.forcenick @John BigNerd\n.forcenick @John (clears)' },
-    { name: 'pic',           desc: 'Grant image permissions to a user in this channel',     example: '.pic @John' },
-    { name: 'drag',          desc: 'Drag a user into your voice channel',                   example: '.drag @John' },
-    { name: 'help',          desc: 'Show this help menu',                                   example: '.help\n.help wipe' },
+    { name: 'autoresponder', desc: 'Manage auto-responders',                                  example: '.ar add hello | Hello!\n.ar remove hello\n.ar list' },
+    { name: 'automod',       desc: 'Manage automod word/link filter',                         example: '.automod add word badword' },
+    { name: 'allow',         desc: 'Set a role allowed to ping @everyone',                    example: '.allow @Announcements' },
+    { name: 'setuplogger',   desc: 'Create and set the logging channel',                      example: '.setuplogger' },
+    { name: 'saveserver',    desc: 'Save the full server layout',                             example: '.saveserver' },
+    { name: 'serverload',    desc: 'Restore the server layout from backup',                   example: '.serverload' },
+    { name: 'resetsave',     desc: 'Delete the saved server backup',                          example: '.resetsave' },
+    { name: 's',             desc: 'Snipe the last deleted message',                          example: '.s' },
+    { name: 'cs',            desc: 'Clear the sniped message',                                example: '.cs' },
+    { name: 'c',             desc: 'Delete a number of messages (1-100)',                     example: '.c 50' },
+    { name: 'forcenick',     desc: 'Force or clear a nickname on a user',                     example: '.forcenick @John BigNerd' },
+    { name: 'pic',           desc: 'Grant image permissions to a user',                       example: '.pic @John' },
+    { name: 'drag',          desc: 'Drag a user into your voice channel',                     example: '.drag @John' },
+    { name: 'setavatar',     desc: "Change the bot's avatar",                                 example: '.setavatar (attach image)' },
+    { name: 'help',          desc: 'Show this help menu',                                     example: '.help\n.help wipe' },
+  ],
+  info: [
+    { name: 'ui',     desc: 'Show detailed user information',   example: '.ui @John' },
+    { name: 'si',     desc: 'Show server information',          example: '.si' },
+    { name: 'av',     desc: "Show a user's avatar",             example: '.av @John' },
+    { name: 'banner', desc: "Show a user's banner",             example: '.banner @John' },
+    { name: 'mc',     desc: 'Show the server member count',     example: '.mc' },
   ],
   voice: [
-    { name: 'setupj2c',  desc: 'Create the join-to-create voice channel',           example: '.setupj2c' },
-    { name: 'vclaim',    desc: 'Claim a J2C channel whose owner left',              example: '.vclaim' },
-    { name: 'vclock',    desc: 'Lock your J2C channel',                             example: '.vclock' },
-    { name: 'vcunlock',  desc: 'Unlock your J2C channel',                           example: '.vcunlock' },
-    { name: 'vcpermit',  desc: 'Allow a user to join your locked channel',          example: '.vcpermit @John' },
-    { name: 'vcreject',  desc: 'Kick and block a user from your channel',           example: '.vcreject @John' },
+    { name: 'setupj2c',  desc: 'Create the join-to-create voice channel', example: '.setupj2c' },
+    { name: 'vclaim',    desc: 'Claim a J2C channel whose owner left',    example: '.vclaim' },
+    { name: 'vclock',    desc: 'Lock your J2C channel',                   example: '.vclock' },
+    { name: 'vcunlock',  desc: 'Unlock your J2C channel',                 example: '.vcunlock' },
+    { name: 'vcpermit',  desc: 'Allow a user to join your locked channel', example: '.vcpermit @John' },
+    { name: 'vcreject',  desc: 'Kick a user from your channel',           example: '.vcreject @John' },
   ],
 };
+
+// Categories hidden from non-ST/IC users
+const PROTECTED_CATEGORIES = new Set(['admin', 'moderation', 'owner', 'utility', 'voice']);
 
 const CATEGORY_META = {
   admin:      { emoji: '⚙️',  label: 'Admin',      color: 0xEB459E },
@@ -107,30 +111,47 @@ module.exports = {
   example: '.help\n.help wipe',
 
   async execute(message, args, client, config) {
+    // Check if user is ST, inner circle, or bot owner
+    const ownerIds = (process.env.OWNER_IDS || '').split(',').map(s => s.trim());
+    const isBotOwner = ownerIds.includes(message.author.id);
+    const ud = await UserData.findOne({ guildId: message.guild.id, userId: message.author.id }).lean();
+    const isPrivileged = isBotOwner || ud?.isInnerCircle || ud?.isSecret;
+
+    // Determine which categories to show
+    const visibleCategories = Object.entries(COMMAND_DATA).filter(([cat]) => {
+      if (PROTECTED_CATEGORIES.has(cat) && !isPrivileged) return false;
+      return true;
+    });
+
     // ── Specific command lookup ───────────────────────────────────────────────
     if (args[0]) {
       const name = args[0].toLowerCase();
 
-      // Search COMMAND_DATA first for rich info
+      // Check if this command belongs to a protected category
       let found = null;
+      let foundCat = null;
       for (const [cat, cmds] of Object.entries(COMMAND_DATA)) {
         const match = cmds.find(c => c.name === name);
-        if (match) { found = { ...match, cat }; break; }
+        if (match) { found = match; foundCat = cat; break; }
       }
 
-      // Fall back to live command registry
+      // Hide protected commands from non-privileged users
+      if (found && PROTECTED_CATEGORIES.has(foundCat) && !isPrivileged) {
+        return message.reply({ embeds: [{ color: 0xED4245, description: `❌ Command \`${name}\` not found.` }] });
+      }
+
       const cmd = client.commands.get(name);
       if (!found && !cmd)
         return message.reply({ embeds: [{ color: 0xED4245, description: `❌ Command \`${name}\` not found.` }] });
 
-      const meta = CATEGORY_META[found?.cat || cmd?.category] || { color: 0x5865F2 };
+      const meta = CATEGORY_META[foundCat || cmd?.category] || { color: 0x5865F2 };
       const embed = new EmbedBuilder()
         .setColor(meta.color)
         .setTitle(`📖 \`${PREFIX}${found?.name || cmd.name}\``)
         .addFields(
           { name: 'Description', value: found?.desc || cmd?.description || 'No description', inline: false },
-          { name: 'Usage',       value: `\`${cmd?.usage || PREFIX + name}\``,                inline: true  },
-          { name: 'Category',    value: `\`${found?.cat || cmd?.category || 'misc'}\``,      inline: true  },
+          { name: 'Usage',       value: `\`${cmd?.usage || PREFIX + name}\``,                inline: true },
+          { name: 'Category',    value: `\`${foundCat || cmd?.category || 'misc'}\``,        inline: true },
           { name: 'Example',     value: found?.example ? `\`\`\`\n${found.example}\n\`\`\`` : '`No example`', inline: false },
         );
 
@@ -139,7 +160,7 @@ module.exports = {
     }
 
     // ── Paginated help ────────────────────────────────────────────────────────
-    const totalCmds = Object.values(COMMAND_DATA).reduce((a, b) => a + b.length, 0);
+    const totalCmds = visibleCategories.reduce((a, [, cmds]) => a + cmds.length, 0);
 
     const pages = [];
 
@@ -152,7 +173,8 @@ module.exports = {
           `**Prefix:** \`${PREFIX}\``,
           `**Total Commands:** \`${totalCmds}\``,
           '',
-          ...Object.entries(CATEGORY_META).map(([cat, meta]) => {
+          ...visibleCategories.map(([cat]) => {
+            const meta = CATEGORY_META[cat];
             const count = COMMAND_DATA[cat]?.length || 0;
             return `${meta.emoji} **${meta.label}** — \`${count} commands\``;
           }),
@@ -161,20 +183,17 @@ module.exports = {
           `Use \`${PREFIX}help <command>\` for detailed info + example.`,
         ].join('\n'))
         .setThumbnail(client.user.displayAvatarURL())
-        .setFooter({ text: `Page 1/${Object.keys(COMMAND_DATA).length + 1}` })
+        .setFooter({ text: `Page 1/${visibleCategories.length + 1}` })
     );
 
-    // One page per category
-    const cats = Object.entries(COMMAND_DATA);
-    for (let i = 0; i < cats.length; i++) {
-      const [cat, cmds] = cats[i];
+    // One page per visible category
+    for (const [cat, cmds] of visibleCategories) {
       const meta = CATEGORY_META[cat] || { emoji: '📌', label: cat, color: 0x5865F2 };
 
       const lines = cmds.map(cmd =>
         `\`${PREFIX}${cmd.name}\`\n> ${cmd.desc}\n> **e.g.** \`${cmd.example.split('\n')[0]}\``
       );
 
-      // Split into chunks of 8 if category is large
       const chunkSize = 8;
       for (let j = 0; j < lines.length; j += chunkSize) {
         const chunk = lines.slice(j, j + chunkSize);

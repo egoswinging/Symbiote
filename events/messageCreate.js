@@ -4,12 +4,21 @@ const UserData = require('../models/UserData');
 const AutoResponder = require('../models/AutoResponder');
 const PingTrack = require('../models/AutoMod');
 const { errorEmbed } = require('../utils/embeds');
-const { logAction } = require('../utils/logger');
 const { EmbedBuilder } = require('discord.js');
 
 const PREFIX = process.env.PREFIX || '.';
-const PING_WINDOW_MS  = 5 * 60 * 1000; // 5 minutes
-const PING_LIMIT      = 3;
+const PING_WINDOW_MS = 5 * 60 * 1000;
+const PING_LIMIT = 3;
+
+// Commands anyone can use (no whitelist required)
+const PUBLIC_COMMANDS = new Set([
+  'ui', 'userinfo', 'whois',
+  'si', 'serverinfo', 'guild',
+  'av', 'avatar', 'pfp',
+  'banner',
+  'mc', 'membercount',
+  'help', 'h', 'cmds',
+]);
 
 module.exports = {
   name: Events.MessageCreate,
@@ -19,29 +28,26 @@ module.exports = {
     const ownerIds = (process.env.OWNER_IDS || '').split(',').map(s => s.trim());
     const isBotOwner = ownerIds.includes(message.author.id);
 
-    // Fetch guild config once
     let config = await GuildConfig.findOne({ guildId: message.guild.id });
     if (!config) config = await GuildConfig.create({ guildId: message.guild.id });
 
-    // Fetch user data once
     const ud = await UserData.findOne({ guildId: message.guild.id, userId: message.author.id }).lean();
 
-    // ── SHUSH: delete ALL messages from shushed user ─────────────────────────
-    if (ud?.isShushed && !isBotOwner) {
+    const isProtected = isBotOwner || ud?.isInnerCircle || ud?.isSecret;
+
+    // ── SHUSH: delete ALL messages from shushed user ──────────────────────────
+    if (ud?.isShushed && !isProtected) {
       return message.delete().catch(() => {});
     }
 
     // ── AUTOMOD: word + link filter ───────────────────────────────────────────
-    if (config.automod?.enabled && !isBotOwner && !ud?.isSecret && !ud?.isInnerCircle) {
+    if (config.automod?.enabled && !isProtected) {
       const content = message.content.toLowerCase();
       let triggered = null;
 
-      // Check banned words
       for (const word of config.automod.words || []) {
         if (content.includes(word)) { triggered = `Banned word: \`${word}\``; break; }
       }
-
-      // Check banned links
       if (!triggered) {
         for (const link of config.automod.links || []) {
           if (content.includes(link.toLowerCase())) { triggered = `Banned link: \`${link}\``; break; }
@@ -50,13 +56,9 @@ module.exports = {
 
       if (triggered) {
         await message.delete().catch(() => {});
-
-        // Log it
         const logCh = config.automod.channel
           ? message.guild.channels.cache.get(config.automod.channel)
-          : config.logChannel
-            ? message.guild.channels.cache.get(config.logChannel)
-            : null;
+          : config.logChannel ? message.guild.channels.cache.get(config.logChannel) : null;
 
         if (logCh) {
           await logCh.send({
@@ -77,7 +79,7 @@ module.exports = {
     }
 
     // ── @EVERYONE PING RATE LIMIT ─────────────────────────────────────────────
-    if (message.mentions.everyone && !isBotOwner && !ud?.isSecret && !ud?.isInnerCircle) {
+    if (message.mentions.everyone && !isProtected) {
       const memberRoles = message.member.roles.cache.map(r => r.id);
       const isAllowed = (config.allowedPingRoles || []).some(id => memberRoles.includes(id));
 
@@ -94,11 +96,9 @@ module.exports = {
         );
 
         if (recent.length > PING_LIMIT) {
-          // Timeout the user
-          await message.member.timeout(10 * 60 * 1000, 'Exceeded @everyone ping limit (3 per 5min)').catch(() => {});
-          await message.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription(`<@${message.author.id}> You have been timed out for exceeding the @everyone ping limit (${PING_LIMIT} per 5 minutes).`)] }).catch(() => {});
+          await message.member.timeout(10 * 60 * 1000, 'Exceeded @everyone ping limit').catch(() => {});
+          await message.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription(`<@${message.author.id}> You have been timed out for exceeding the @everyone ping limit.`)] }).catch(() => {});
 
-          // Log it
           const logCh = config.logChannel ? message.guild.channels.cache.get(config.logChannel) : null;
           if (logCh) {
             await logCh.send({
@@ -109,7 +109,6 @@ module.exports = {
                   { name: 'User',    value: `<@${message.author.id}> (${message.author.tag})`, inline: true },
                   { name: 'Channel', value: `<#${message.channel.id}>`, inline: true },
                   { name: 'Action',  value: 'Timed out 10 minutes', inline: false },
-                  { name: 'Pings',   value: `${recent.length} in last 5 minutes`, inline: false },
                 )
                 .setTimestamp()]
             }).catch(() => {});
@@ -120,17 +119,19 @@ module.exports = {
 
     // ── CLEAN MODE ────────────────────────────────────────────────────────────
     if (client.cleanChannels.has(message.channel.id)) {
-      const exempt = isBotOwner || ud?.isWhitelisted || ud?.isSecret || ud?.isInnerCircle;
+      const exempt = isProtected || ud?.isWhitelisted;
       if (!exempt && !message.content.startsWith(PREFIX)) {
         return message.delete().catch(() => {});
       }
     }
 
-    // ── AUTO RESPONDER ────────────────────────────────────────────────────────
+    // ── AUTO RESPONDER — exact match only ─────────────────────────────────────
     if (!message.content.startsWith(PREFIX)) {
+      const trimmed = message.content.trim().toLowerCase();
       const responders = await AutoResponder.find({ guildId: message.guild.id }).lean();
       for (const ar of responders) {
-        if (message.content.toLowerCase().includes(ar.trigger)) {
+        // Exact match only — the entire message must equal the trigger
+        if (trimmed === ar.trigger.toLowerCase()) {
           await message.channel.send(ar.response).catch(() => {});
           break;
         }
@@ -146,9 +147,15 @@ module.exports = {
     const command = client.commands.get(commandName);
     if (!command) return;
 
-    // Blacklist check — blacklisted users cannot run any command
+    // Blacklist check
     if (ud?.isBlacklisted && !isBotOwner) {
       return message.reply({ embeds: [errorEmbed('You are **blacklisted** from using this bot.')] });
+    }
+
+    // ── WHITELIST GATE ────────────────────────────────────────────────────────
+    // Only ST, inner circle, and bot owner can use non-public commands
+    if (!isProtected && !PUBLIC_COMMANDS.has(commandName)) {
+      return; // silently ignore — don't even send an error
     }
 
     try {
