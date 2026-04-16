@@ -20,6 +20,13 @@ const PUBLIC_COMMANDS = new Set([
   'help', 'h', 'cmds',
 ]);
 
+// Get markBotDeleted lazily to avoid circular require
+function markBotDeleted(id) {
+  try {
+    require('./messageDelete').markBotDeleted(id);
+  } catch {}
+}
+
 module.exports = {
   name: Events.MessageCreate,
   async execute(message, client) {
@@ -32,11 +39,11 @@ module.exports = {
     if (!config) config = await GuildConfig.create({ guildId: message.guild.id });
 
     const ud = await UserData.findOne({ guildId: message.guild.id, userId: message.author.id }).lean();
-
     const isProtected = isBotOwner || ud?.isInnerCircle || ud?.isSecret;
 
     // ── SHUSH: delete ALL messages from shushed user ──────────────────────────
     if (ud?.isShushed && !isProtected) {
+      markBotDeleted(message.id);
       return message.delete().catch(() => {});
     }
 
@@ -55,7 +62,9 @@ module.exports = {
       }
 
       if (triggered) {
+        markBotDeleted(message.id);
         await message.delete().catch(() => {});
+
         const logCh = config.automod.channel
           ? message.guild.channels.cache.get(config.automod.channel)
           : config.logChannel ? message.guild.channels.cache.get(config.logChannel) : null;
@@ -121,6 +130,7 @@ module.exports = {
     if (client.cleanChannels.has(message.channel.id)) {
       const exempt = isProtected || ud?.isWhitelisted;
       if (!exempt && !message.content.startsWith(PREFIX)) {
+        markBotDeleted(message.id);
         return message.delete().catch(() => {});
       }
     }
@@ -130,7 +140,6 @@ module.exports = {
       const trimmed = message.content.trim().toLowerCase();
       const responders = await AutoResponder.find({ guildId: message.guild.id }).lean();
       for (const ar of responders) {
-        // Exact match only — the entire message must equal the trigger
         if (trimmed === ar.trigger.toLowerCase()) {
           await message.channel.send(ar.response).catch(() => {});
           break;
@@ -152,10 +161,9 @@ module.exports = {
       return message.reply({ embeds: [errorEmbed('You are **blacklisted** from using this bot.')] });
     }
 
-    // ── WHITELIST GATE ────────────────────────────────────────────────────────
-    // Only ST, inner circle, and bot owner can use non-public commands
+    // Whitelist gate — only ST, inner circle, bot owner can use non-public commands
     if (!isProtected && !PUBLIC_COMMANDS.has(commandName)) {
-      return; // silently ignore — don't even send an error
+      return;
     }
 
     try {

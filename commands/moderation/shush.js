@@ -3,14 +3,18 @@ const { successEmbed, errorEmbed } = require('../../utils/embeds');
 const { resolveMember } = require('../../utils/helpers');
 const { logAction } = require('../../utils/logger');
 const UserData = require('../../models/UserData');
-const { EmbedBuilder } = require('discord.js');
 
-// .shush — auto-delete all future messages from user until .unshush
+async function silentReply(message, embed, delay = 3000) {
+  await message.delete().catch(() => {});
+  const reply = await message.channel.send({ embeds: [embed] });
+  setTimeout(() => reply.delete().catch(() => {}), delay);
+}
+
 const shush = {
   name: 'shush',
   category: 'moderation',
-  description: 'Silently delete all messages from a user until unshushed',
-  usage: '.shush <@user>',
+  description: 'Auto-delete all future messages from a user',
+  usage: '.shush @user',
   example: '.shush @John',
 
   async execute(message, args, client, config) {
@@ -28,17 +32,16 @@ const shush = {
       { upsert: true }
     );
 
-    await logAction(message.guild, { action: 'Shush', moderator: message.author.id, target: target.id, reason: 'User shushed — messages will be auto-deleted' });
-    return message.reply({ embeds: [successEmbed(`${target} has been **shushed**. All their messages will be deleted automatically.`)] });
+    await logAction(message.guild, { action: 'Shush', moderator: message.author.id, target: target.id, reason: 'Messages will be auto-deleted' });
+    await silentReply(message, successEmbed(`${target} has been **shushed**.`));
   },
 };
 
-// .unshush — stop deleting their messages
 const unshush = {
   name: 'unshush',
   category: 'moderation',
   description: 'Stop auto-deleting messages from a shushed user',
-  usage: '.unshush <@user>',
+  usage: '.unshush @user',
   example: '.unshush @John',
 
   async execute(message, args, client, config) {
@@ -53,7 +56,7 @@ const unshush = {
       { isShushed: false }
     );
 
-    return message.reply({ embeds: [successEmbed(`${target} has been **unshushed**.`)] });
+    await silentReply(message, successEmbed(`${target} has been **unshushed**.`));
   },
 };
 

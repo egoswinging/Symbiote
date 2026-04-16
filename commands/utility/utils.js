@@ -1,16 +1,21 @@
 const { requireTier } = require('../../utils/permissions');
 const { successEmbed, errorEmbed } = require('../../utils/embeds');
-const { resolveMember, bulkDelete } = require('../../utils/helpers');
+const { resolveMember } = require('../../utils/helpers');
 const UserData = require('../../models/UserData');
 const { EmbedBuilder } = require('discord.js');
 
-// ── ,s (snipe) ────────────────────────────────────────────────────────────────
+function markBotDeleted(id) {
+  try { require('../events/messageDelete').markBotDeleted(id); } catch {}
+}
+
+// .s — snipe
 const s = {
   name: 's',
   aliases: ['snipe'],
   category: 'utility',
   description: 'Snipe the last deleted message',
   usage: '.s',
+  example: '.s',
 
   async execute(message, args, client, config) {
     const snipe = client.snipes.get(message.channel.id);
@@ -27,30 +32,31 @@ const s = {
   },
 };
 
-// ── ,cs (clear snipe) ─────────────────────────────────────────────────────────
+// .cs — clear snipe
 const cs = {
   name: 'cs',
   aliases: ['clearsnipe'],
   category: 'utility',
   description: 'Clear the sniped message for this channel',
   usage: '.cs',
+  example: '.cs',
 
   async execute(message, args, client, config) {
     if (!await requireTier(message.member, 'v3', config))
       return message.reply({ embeds: [errorEmbed('Insufficient permissions.')] });
-
     client.snipes.delete(message.channel.id);
     return message.reply({ embeds: [successEmbed('Snipe cleared.')] });
   },
 };
 
-// ── ,c (clear/purge messages) ─────────────────────────────────────────────────
+// .c — clear messages (marks all as bot-deleted so logger ignores them)
 const c = {
   name: 'c',
   aliases: ['purge', 'clear'],
   category: 'utility',
-  description: 'Delete a number of messages',
+  description: 'Delete a number of messages (1-100)',
   usage: '.c <amount>',
+  example: '.c 50',
 
   async execute(message, args, client, config) {
     if (!await requireTier(message.member, 'v3', config))
@@ -60,22 +66,33 @@ const c = {
     if (isNaN(amount) || amount < 1 || amount > 100)
       return message.reply({ embeds: [errorEmbed('Provide a number between 1 and 100.')] });
 
-    // Delete command message too
+    // Delete command message
+    markBotDeleted(message.id);
     await message.delete().catch(() => {});
 
-    const deleted = await bulkDelete(message.channel, amount);
-    const notice  = await message.channel.send({ embeds: [successEmbed(`Deleted **${deleted}** messages.`)] });
+    const fetched = await message.channel.messages.fetch({ limit: Math.min(amount, 100) });
+    const deletable = fetched.filter(m =>
+      Date.now() - m.createdTimestamp < 14 * 24 * 60 * 60 * 1000
+    );
+
+    // Mark all as bot-deleted before bulk deleting
+    for (const [, m] of deletable) markBotDeleted(m.id);
+
+    await message.channel.bulkDelete(deletable, true).catch(() => {});
+
+    const notice = await message.channel.send({ embeds: [successEmbed(`Deleted **${deletable.size}** messages.`)] });
     setTimeout(() => notice.delete().catch(() => {}), 3000);
   },
 };
 
-// ── ,forcenick ────────────────────────────────────────────────────────────────
+// .forcenick
 const forcenick = {
   name: 'forcenick',
   aliases: ['fn'],
   category: 'utility',
   description: 'Force or remove a nickname from a user',
-  usage: '.forcenick <@user> [nickname]',
+  usage: '.forcenick @user [nickname]',
+  example: '.forcenick @John BigNerd',
 
   async execute(message, args, client, config) {
     if (!await requireTier(message.member, 'v2', config))
@@ -93,22 +110,22 @@ const forcenick = {
         { forcedNick: nick },
         { upsert: true }
       );
-
       return message.reply({
         embeds: [successEmbed(nick ? `Set **${target.user.tag}**'s nickname to: \`${nick}\`` : `Cleared **${target.user.tag}**'s nickname.`)]
       });
     } catch {
-      return message.reply({ embeds: [errorEmbed('Failed to change nickname — check my permissions.')] });
+      return message.reply({ embeds: [errorEmbed('Failed to change nickname.')] });
     }
   },
 };
 
-// ── ,pic ──────────────────────────────────────────────────────────────────────
+// .pic
 const pic = {
   name: 'pic',
   category: 'utility',
-  description: 'Grant image/attachment permissions to a user in this channel',
-  usage: '.pic <@user>',
+  description: 'Grant image permissions to a user in this channel',
+  usage: '.pic @user',
+  example: '.pic @John',
 
   async execute(message, args, client, config) {
     if (!await requireTier(message.member, 'v3', config))
@@ -120,18 +137,19 @@ const pic = {
     await message.channel.permissionOverwrites.edit(target, {
       AttachFiles: true,
       EmbedLinks: true,
-    }, { reason: `Pic perms granted by ${message.author.tag}` });
+    }, { reason: `Pic perms by ${message.author.tag}` });
 
-    return message.reply({ embeds: [successEmbed(`Granted image permissions to ${target} in this channel.`)] });
+    return message.reply({ embeds: [successEmbed(`Granted image permissions to ${target}.`)] });
   },
 };
 
-// ── ,drag ─────────────────────────────────────────────────────────────────────
+// .drag
 const drag = {
   name: 'drag',
   category: 'utility',
-  description: 'Drag a user into your current voice channel',
-  usage: '.drag <@user>',
+  description: 'Drag a user into your voice channel',
+  usage: '.drag @user',
+  example: '.drag @John',
 
   async execute(message, args, client, config) {
     if (!await requireTier(message.member, 'v3', config))

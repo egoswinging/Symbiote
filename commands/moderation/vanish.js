@@ -5,11 +5,18 @@ const { logAction } = require('../../utils/logger');
 const UserData = require('../../models/UserData');
 const { EmbedBuilder } = require('discord.js');
 
+// Helper — delete command message + reply after delay
+async function silentReply(message, embed, delay = 3000) {
+  await message.delete().catch(() => {});
+  const reply = await message.channel.send({ embeds: [embed] });
+  setTimeout(() => reply.delete().catch(() => {}), delay);
+}
+
 const vanish = {
   name: 'vanish',
   category: 'moderation',
-  description: 'Vanish a user — removes all roles and applies the vanish role',
-  usage: '.vanish <@user> [reason]',
+  description: 'Remove all roles and apply vanish role',
+  usage: '.vanish @user [reason]',
   example: '.vanish @John being disruptive',
 
   async execute(message, args, client, config) {
@@ -39,16 +46,15 @@ const vanish = {
     );
 
     await logAction(message.guild, { action: 'Vanish', moderator: message.author.id, target: target.id, reason, color: 0xFEE75C });
-    return message.reply({ embeds: [successEmbed(`${target} has been **vanished**.`)] });
+    await silentReply(message, successEmbed(`${target} has been **vanished**.`));
   },
 };
 
-// .unvanish — ONLY removes the vanish role, does NOT restore roles
 const unvanish = {
   name: 'unvanish',
   category: 'moderation',
-  description: 'Remove the vanish role from a user (roles not restored — use .restorevanish for that)',
-  usage: '.unvanish <@user>',
+  description: 'Remove the vanish role (roles NOT restored — use .restorevanish)',
+  usage: '.unvanish @user',
   example: '.unvanish @John',
 
   async execute(message, args, client, config) {
@@ -62,28 +68,23 @@ const unvanish = {
     if (!ud?.isVanished)
       return message.reply({ embeds: [errorEmbed('That user is not vanished.')] });
 
-    // ONLY remove vanish role — do NOT restore any roles
-    if (config.vanishRole) {
-      await target.roles.remove(config.vanishRole).catch(() => {});
-    }
+    if (config.vanishRole) await target.roles.remove(config.vanishRole).catch(() => {});
 
     await UserData.findOneAndUpdate(
       { guildId: message.guild.id, userId: target.id },
       { isVanished: false }
-      // intentionally NOT clearing vanishedRoles — restorevanish needs them
     );
 
-    await logAction(message.guild, { action: 'Unvanish', moderator: message.author.id, target: target.id, reason: 'Vanish role removed (roles NOT restored)', color: 0x57F287 });
-    return message.reply({ embeds: [successEmbed(`${target} has been **unvanished**. Use \`.restorevanish\` to give back their roles.`)] });
+    await logAction(message.guild, { action: 'Unvanish', moderator: message.author.id, target: target.id, reason: 'Vanish role removed', color: 0x57F287 });
+    await silentReply(message, successEmbed(`${target} has been **unvanished**. Use \`.restorevanish\` to restore their roles.`));
   },
 };
 
-// .restorevanish — restores saved roles after unvanish
 const restorevanish = {
   name: 'restorevanish',
   category: 'moderation',
   description: 'Restore all roles a user had before being vanished',
-  usage: '.restorevanish <@user>',
+  usage: '.restorevanish @user',
   example: '.restorevanish @John',
 
   async execute(message, args, client, config) {
@@ -110,7 +111,7 @@ const restorevanish = {
     );
 
     await logAction(message.guild, { action: 'Restore Vanish Roles', moderator: message.author.id, target: target.id, reason: `Restored ${valid.length} roles`, color: 0x57F287 });
-    return message.reply({ embeds: [successEmbed(`Restored **${valid.length}** roles to ${target}.`)] });
+    await silentReply(message, successEmbed(`Restored **${valid.length}** roles to ${target}.`));
   },
 };
 
@@ -137,7 +138,7 @@ const vanishlist = {
 const setupvanish = {
   name: 'setupvanish',
   category: 'moderation',
-  description: 'Apply vanish role permission overwrites across ALL channels',
+  description: 'Apply vanish role deny perms to every channel',
   usage: '.setupvanish',
   example: '.setupvanish',
 
@@ -156,7 +157,7 @@ const setupvanish = {
       await ch.permissionOverwrites.edit(role, { ViewChannel: false, SendMessages: false, Connect: false }).catch(() => {});
       done++;
     }
-    return status.edit({ embeds: [successEmbed(`Applied vanish overwrites to **${done}** channels.`)] });
+    await status.edit({ embeds: [successEmbed(`Applied vanish overwrites to **${done}** channels.`)] });
   },
 };
 

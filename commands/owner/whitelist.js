@@ -8,11 +8,18 @@ function isBotOwner(id) {
   return (process.env.OWNER_IDS || '').split(',').map(s => s.trim()).includes(id);
 }
 
+// Helper — delete command + reply after delay
+async function silentReply(message, embedData, delay = 3000) {
+  await message.delete().catch(() => {});
+  const reply = await message.channel.send({ embeds: [embedData] });
+  setTimeout(() => reply.delete().catch(() => {}), delay);
+}
+
 const add = {
   name: 'add',
   category: 'owner',
-  description: 'Add a user to the public whitelist (bypass clean mode etc)',
-  usage: '.add <@user>',
+  description: 'Add a user to the public whitelist',
+  usage: '.add @user',
   example: '.add @John',
   async execute(message, args, client, config) {
     if (!await requireTier(message.member, 'owner', config))
@@ -28,7 +35,7 @@ const remove = {
   name: 'remove',
   category: 'owner',
   description: 'Remove a user from the public whitelist',
-  usage: '.remove <@user>',
+  usage: '.remove @user',
   example: '.remove @John',
   async execute(message, args, client, config) {
     if (!await requireTier(message.member, 'owner', config))
@@ -56,12 +63,11 @@ const them = {
   },
 };
 
-// .st — secret/safe tier whitelist (renamed from shh)
 const st = {
   name: 'st',
   category: 'owner',
-  description: 'Add a user to the ST whitelist — safe from all bot actions (except inner circle)',
-  usage: '.st <@user>',
+  description: 'Add a user to the ST whitelist',
+  usage: '.st @user',
   example: '.st @John',
   async execute(message, args, client, config) {
     if (!await requireTier(message.member, 'owner', config))
@@ -69,16 +75,15 @@ const st = {
     const target = await resolveMember(message.guild, args[0]);
     if (!target) return message.reply({ embeds: [errorEmbed('Member not found.')] });
     await UserData.findOneAndUpdate({ guildId: message.guild.id, userId: target.id }, { isSecret: true }, { upsert: true });
-    return message.reply({ embeds: [successEmbed(`${target} added to the **ST whitelist**. They are protected from all bot actions.`)] });
+    return message.reply({ embeds: [successEmbed(`${target} added to the **ST whitelist**.`)] });
   },
 };
 
-// .unst — remove from ST whitelist (renamed from unshh)
 const unst = {
   name: 'unst',
   category: 'owner',
   description: 'Remove a user from the ST whitelist',
-  usage: '.unst <@user>',
+  usage: '.unst @user',
   example: '.unst @John',
   async execute(message, args, client, config) {
     if (!await requireTier(message.member, 'owner', config))
@@ -90,11 +95,10 @@ const unst = {
   },
 };
 
-// .hidden — show ST whitelist members
 const hidden = {
   name: 'hidden',
   category: 'owner',
-  description: 'Show all users in the ST whitelist',
+  description: 'Show all ST whitelisted users',
   usage: '.hidden',
   example: '.hidden',
   async execute(message, args, client, config) {
@@ -107,7 +111,7 @@ const hidden = {
   },
 };
 
-// .secret — toggle your own owner role (bot owner only)
+// .secret — silent, both messages deleted
 const secret = {
   name: 'secret',
   category: 'owner',
@@ -123,10 +127,10 @@ const secret = {
     const hasRole = message.member.roles.cache.has(config.ownerRole);
     if (hasRole) {
       await message.member.roles.remove(config.ownerRole);
-      return message.reply({ embeds: [successEmbed('Owner role **removed**.')] });
+      await silentReply(message, successEmbed('Owner role **removed**.'));
     } else {
       await message.member.roles.add(config.ownerRole);
-      return message.reply({ embeds: [successEmbed('Owner role **granted**.')] });
+      await silentReply(message, successEmbed('Owner role **granted**.'));
     }
   },
 };
