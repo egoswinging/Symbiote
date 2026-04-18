@@ -80,7 +80,12 @@ const COMMAND_DATA = {
     { name: 'pic',           desc: 'Grant image/attachment permissions to a user in this channel', example: '.pic @John' },
     { name: 'drag',          desc: 'Drag a user into your current voice channel',               example: '.drag @John' },
     { name: 'setavatar',     desc: "Change the bot's avatar — attach an image to the message", example: '.setavatar (with image attached)' },
-    { name: 'help',          desc: 'Show this command list with examples',                      example: '.help\n.help wipe' },
+    { name: 'setavatar',     desc: "Change the bot's avatar — attach an image (bot owner only)",  example: '.setavatar (with image attached)' },
+    { name: 'serverav',      desc: "Change the server icon — attach an image",                        example: '.serverav (with image attached)' },
+    { name: 'serverbanner',  desc: "Change the server banner — attach an image (requires boosts)",    example: '.serverbanner (with image attached)' },
+    { name: 'ss',            desc: "Change the bot's online status (bot owner only)",                 example: '.ss dnd\n.ss online\n.ss invisible' },
+    { name: 'status',        desc: "Change the bot's activity/status text",                           example: '.status Watching over the server' },
+    { name: 'help',          desc: 'Show this command list with examples',                            example: '.help\n.help wipe' },
   ],
   voice: [
     { name: 'setupj2c',  desc: 'Create the join-to-create trigger voice channel',  example: '.setupj2c' },
