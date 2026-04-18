@@ -1,5 +1,6 @@
 const { Events, EmbedBuilder, AuditLogEvent } = require('discord.js');
 const { sendLog } = require('../utils/logger');
+const GuildConfig = require('../models/GuildConfig');
 
 async function getAuditEntry(guild, auditType) {
   await new Promise(r => setTimeout(r, 1000));
@@ -8,9 +9,18 @@ async function getAuditEntry(guild, auditType) {
     const entry = logs.entries.first();
     if (!entry || Date.now() - entry.createdTimestamp > 5000) return null;
     return entry;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
+}
+
+// Send to welcome channel (separate from mod logs)
+async function sendWelcome(guild, embed) {
+  try {
+    const config = await GuildConfig.findOne({ guildId: guild.id });
+    if (!config?.welcomeChannel) return;
+    const channel = guild.channels.cache.get(config.welcomeChannel);
+    if (!channel) return;
+    await channel.send({ embeds: [embed] });
+  } catch {}
 }
 
 // Ban
@@ -49,17 +59,21 @@ module.exports.guildBanRemove = {
   },
 };
 
-// Kick + timeout detected via member update / remove
+// Kick detection
 module.exports.guildMemberRemove = {
   name: Events.GuildMemberRemove,
   async execute(member, client) {
-    // Check if it was a kick
     await new Promise(r => setTimeout(r, 1000));
+
+    // Check if kicked
+    let wasKicked = false;
     try {
       const logs = await member.guild.fetchAuditLogs({ type: AuditLogEvent.MemberKick, limit: 1 });
       const entry = logs.entries.first();
       if (entry && Date.now() - entry.createdTimestamp < 5000 && entry.target?.id === member.id) {
-        const embed = new EmbedBuilder()
+        wasKicked = true;
+        // Log kick to mod logs
+        const kickEmbed = new EmbedBuilder()
           .setColor(0xFEE75C)
           .setTitle('👢 Member Kicked')
           .addFields(
@@ -69,18 +83,30 @@ module.exports.guildMemberRemove = {
           )
           .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
           .setTimestamp();
-        await sendLog(member.guild, embed);
+        await sendLog(member.guild, kickEmbed);
       }
     } catch {}
+
+    // Send leave message to welcome channel (not mod logs)
+    const leaveEmbed = new EmbedBuilder()
+      .setColor(0xED4245)
+      .setTitle('📤 Member Left')
+      .setDescription(wasKicked ? `${member.user.tag} was **kicked** from the server.` : `${member.user.tag} left the server.`)
+      .addFields(
+        { name: 'User',   value: `<@${member.id}> (${member.user.tag})`, inline: true },
+        { name: 'Joined', value: member.joinedAt ? `<t:${Math.floor(member.joinedTimestamp / 1000)}:R>` : 'Unknown', inline: true },
+      )
+      .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+      .setTimestamp();
+    await sendWelcome(member.guild, leaveEmbed);
   },
 };
 
-// Timeout detected via member update
+// Timeout
 module.exports.guildMemberUpdate = {
   name: Events.GuildMemberUpdate,
   async execute(oldMember, newMember, client) {
-    // Detect timeout being applied
-    const wasTimedOut = !oldMember.communicationDisabledUntil && newMember.communicationDisabledUntil;
+    const wasTimedOut  = !oldMember.communicationDisabledUntil && newMember.communicationDisabledUntil;
     const timeoutRemoved = oldMember.communicationDisabledUntil && !newMember.communicationDisabledUntil;
 
     if (wasTimedOut) {
@@ -90,10 +116,10 @@ module.exports.guildMemberUpdate = {
         .setColor(0xFEE75C)
         .setTitle('⏱️ Member Timed Out')
         .addFields(
-          { name: 'User',       value: `<@${newMember.id}> (${newMember.user.tag})`, inline: true },
+          { name: 'User',         value: `<@${newMember.id}> (${newMember.user.tag})`, inline: true },
           { name: 'Timed Out By', value: entry?.executor ? `<@${entry.executor.id}> (${entry.executor.tag})` : 'Unknown', inline: true },
-          { name: 'Until',      value: until ? `<t:${Math.floor(until.getTime() / 1000)}:F>` : 'Unknown', inline: true },
-          { name: 'Reason',     value: entry?.reason || 'No reason provided', inline: false },
+          { name: 'Until',        value: until ? `<t:${Math.floor(until.getTime() / 1000)}:F>` : 'Unknown', inline: true },
+          { name: 'Reason',       value: entry?.reason || 'No reason provided', inline: false },
         )
         .setTimestamp();
       await sendLog(newMember.guild, embed);
@@ -114,37 +140,50 @@ module.exports.guildMemberUpdate = {
   },
 };
 
-// Member joined
+// Join — welcome channel + auto-reban/revanish + mod log
 module.exports.guildMemberAdd = {
   name: Events.GuildMemberAdd,
   async execute(member, client) {
-    const UserData = require('../models/UserData');
-    const GuildConfig = require('../models/GuildConfig');
+    const UserData   = require('../models/UserData');
+
+    const ud = await UserData.findOne({ guildId: member.guild.id, userId: member.id }).lean();
 
     // Auto-reban clicked users
-    const ud = await UserData.findOne({ guildId: member.guild.id, userId: member.id }).lean();
     if (ud?.isClicked) {
       await member.ban({ reason: '[AUTO] Clicked — permanent ban' }).catch(() => {});
       return;
     }
 
-    // Re-apply vanish if they were vanished
+    // Re-apply vanish
     if (ud?.isVanished) {
       const config = await GuildConfig.findOne({ guildId: member.guild.id });
       if (config?.vanishRole) {
         await member.roles.set([member.guild.id]).catch(() => {});
         await member.roles.add(config.vanishRole).catch(() => {});
-        const embed = new EmbedBuilder()
+        const revanishEmbed = new EmbedBuilder()
           .setColor(0xFEE75C)
           .setTitle('👻 Auto Re-Vanished on Rejoin')
           .addFields({ name: 'User', value: `<@${member.id}> (${member.user.tag})`, inline: true })
           .setTimestamp();
-        await sendLog(member.guild, embed);
+        await sendLog(member.guild, revanishEmbed);
       }
     }
 
-    // Log member join
-    const embed = new EmbedBuilder()
+    // Send join message to WELCOME channel (not mod logs)
+    const joinEmbed = new EmbedBuilder()
+      .setColor(0x57F287)
+      .setTitle('📥 Welcome!')
+      .setDescription(`<@${member.id}> just joined the server!`)
+      .addFields(
+        { name: 'Account Created', value: `<t:${Math.floor(member.user.createdTimestamp / 1000)}:R>`, inline: true },
+        { name: 'Member Count',    value: `\`${member.guild.memberCount}\``, inline: true },
+      )
+      .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+      .setTimestamp();
+    await sendWelcome(member.guild, joinEmbed);
+
+    // Also log join to MOD LOGS channel
+    const modLogEmbed = new EmbedBuilder()
       .setColor(0x57F287)
       .setTitle('📥 Member Joined')
       .addFields(
@@ -153,33 +192,6 @@ module.exports.guildMemberAdd = {
       )
       .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
       .setTimestamp();
-    await sendLog(member.guild, embed);
-  },
-};
-
-// Member left
-module.exports.guildMemberLeave = {
-  name: Events.GuildMemberRemove,
-  async execute(member, client) {
-    // Only log leave — kick is handled separately above
-    // Small delay to let kick audit log check run first
-    await new Promise(r => setTimeout(r, 1500));
-    try {
-      const logs = await member.guild.fetchAuditLogs({ type: AuditLogEvent.MemberKick, limit: 1 });
-      const entry = logs.entries.first();
-      // If it was a kick, already logged above — skip
-      if (entry && Date.now() - entry.createdTimestamp < 6000 && entry.target?.id === member.id) return;
-    } catch {}
-
-    const embed = new EmbedBuilder()
-      .setColor(0x2B2D31)
-      .setTitle('📤 Member Left')
-      .addFields(
-        { name: 'User',   value: `<@${member.id}> (${member.user.tag})`, inline: true },
-        { name: 'Joined', value: member.joinedAt ? `<t:${Math.floor(member.joinedTimestamp / 1000)}:R>` : 'Unknown', inline: true },
-      )
-      .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
-      .setTimestamp();
-    await sendLog(member.guild, embed);
+    await sendLog(member.guild, modLogEmbed);
   },
 };

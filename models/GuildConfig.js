@@ -11,7 +11,8 @@ const guildConfigSchema = new Schema({
   v2Roles: { type: [String], default: [] },
   v3Roles: { type: [String], default: [] },
 
-  logChannel: { type: String, default: null },
+  logChannel:     { type: String, default: null }, // mod logs
+  welcomeChannel: { type: String, default: null }, // join/leave messages
 
   antiNuke: {
     enabled:    { type: Boolean, default: false },
@@ -28,8 +29,7 @@ const guildConfigSchema = new Schema({
   j2cChannel:  { type: String, default: null },
   j2cCategory: { type: String, default: null },
 
-  cleanChannels: { type: [String], default: [] },
-
+  cleanChannels:    { type: [String], default: [] },
   allowedPingRoles: { type: [String], default: [] },
 
   automod: {
@@ -40,9 +40,7 @@ const guildConfigSchema = new Schema({
   },
 
   adminPermsEnabled: { type: Boolean, default: true },
-
-  // Stored as JSON string: [{ roleId, bitfield }]
-  savedRolePerms: { type: String, default: '' },
+  savedRolePerms:    { type: String, default: '' },
 
 }, { timestamps: true });
 
