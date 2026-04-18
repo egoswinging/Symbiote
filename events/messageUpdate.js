@@ -1,12 +1,12 @@
-const { Events, EmbedBuilder, AuditLogEvent } = require('discord.js');
-const { sendLog } = require('../utils/logger');
+const { Events, EmbedBuilder } = require('discord.js');
+const { sendDeleteEditLog } = require('../utils/logger');
 
 module.exports = {
   name: Events.MessageUpdate,
   async execute(oldMessage, newMessage, client) {
     if (!newMessage.guild) return;
     if (newMessage.author?.bot) return;
-    if (oldMessage.content === newMessage.content) return; // embeds updating, ignore
+    if (oldMessage.content === newMessage.content) return;
 
     const embed = new EmbedBuilder()
       .setColor(0x5865F2)
@@ -20,6 +20,7 @@ module.exports = {
       .setFooter({ text: `Message ID: ${newMessage.id}` })
       .setTimestamp();
 
-    await sendLog(newMessage.guild, embed);
+    // Goes to dele-edit channel
+    await sendDeleteEditLog(newMessage.guild, embed);
   },
 };

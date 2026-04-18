@@ -19,6 +19,7 @@ const PUBLIC_COMMANDS = new Set([
   'mc', 'membercount',
   'help', 'h', 'cmds',
   'ss', 'status', 'setavatar', 'sav',
+  'saveserver', 'serverload', 'ts', 'deletesave',
 ]);
 
 // Get markBotDeleted lazily to avoid circular require

@@ -2,7 +2,7 @@ const { EmbedBuilder } = require('discord.js');
 const GuildConfig = require('../models/GuildConfig');
 
 /**
- * Send a log embed to the guild's configured log channel.
+ * Send to the main mod-log channel
  */
 async function sendLog(guild, embed) {
   try {
@@ -13,6 +13,23 @@ async function sendLog(guild, embed) {
     await channel.send({ embeds: [embed] });
   } catch (err) {
     console.error('Log send failed:', err.message);
+  }
+}
+
+/**
+ * Send to the delete/edit channel specifically
+ */
+async function sendDeleteEditLog(guild, embed) {
+  try {
+    const config = await GuildConfig.findOne({ guildId: guild.id });
+    // Fall back to main log channel if dele-edit not configured
+    const channelId = config?.deleteEditChannel || config?.logChannel;
+    if (!channelId) return;
+    const channel = guild.channels.cache.get(channelId);
+    if (!channel) return;
+    await channel.send({ embeds: [embed] });
+  } catch (err) {
+    console.error('Delete/edit log failed:', err.message);
   }
 }
 
@@ -32,4 +49,4 @@ async function logAction(guild, { action, moderator, target, reason, color = 0xE
   await sendLog(guild, embed);
 }
 
-module.exports = { sendLog, logAction };
+module.exports = { sendLog, sendDeleteEditLog, logAction };

@@ -11,8 +11,9 @@ const guildConfigSchema = new Schema({
   v2Roles: { type: [String], default: [] },
   v3Roles: { type: [String], default: [] },
 
-  logChannel:     { type: String, default: null }, // mod logs
-  welcomeChannel: { type: String, default: null }, // join/leave messages
+  logChannel:          { type: String, default: null }, // mod logs (commands + bans etc)
+  deleteEditChannel:   { type: String, default: null }, // deleted/edited messages
+  welcomeChannel:      { type: String, default: null }, // join/leave messages
 
   antiNuke: {
     enabled:    { type: Boolean, default: false },

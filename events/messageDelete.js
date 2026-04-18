@@ -1,14 +1,10 @@
 const { Events, EmbedBuilder, AuditLogEvent } = require('discord.js');
-const { sendLog } = require('../utils/logger');
+const { sendDeleteEditLog } = require('../utils/logger');
 
-// Track message IDs that were deleted by the bot intentionally
-// so the logger ignores them
 const BOT_DELETED = new Set();
 
-// Export so other files can mark messages as bot-deleted
 function markBotDeleted(messageId) {
   BOT_DELETED.add(messageId);
-  // Clean up after 5s
   setTimeout(() => BOT_DELETED.delete(messageId), 5000);
 }
 
@@ -18,7 +14,7 @@ module.exports = {
     if (!message.guild) return;
     if (message.author?.bot) return;
 
-    // Store snipe regardless
+    // Store snipe
     if (message.author) {
       client.snipes.set(message.channel.id, {
         content:   message.content || '*[No text content]*',
@@ -29,13 +25,10 @@ module.exports = {
       });
     }
 
-    // Skip logging if this was deleted by the bot intentionally (clean, shush, .c)
+    // Skip if bot deleted it (clean, shush, .c, automod)
     if (BOT_DELETED.has(message.id)) return;
-
-    // Skip logging if message has no content (partial message, uncached)
     if (!message.content && message.attachments.size === 0) return;
 
-    // Log asynchronously
     (async () => {
       await new Promise(r => setTimeout(r, 1000));
 
@@ -45,7 +38,6 @@ module.exports = {
         const entry = logs.entries.first();
         if (entry && Date.now() - entry.createdTimestamp < 5000 && entry.target?.id === message.author?.id) {
           deletedBy = entry.executor;
-          // If deleted by the bot itself (clean mode, shush, .c) — skip logging
           if (deletedBy?.id === message.guild.client.user.id) return;
         }
       } catch {}
@@ -70,7 +62,8 @@ module.exports = {
         });
       }
 
-      await sendLog(message.guild, embed);
+      // Goes to dele-edit channel
+      await sendDeleteEditLog(message.guild, embed);
     })();
   },
 };
