@@ -4,23 +4,29 @@ const UserData = require('../models/UserData');
 const { trackAction, clearTracker } = require('../utils/antiNukeTracker');
 const { sendLog } = require('../utils/logger');
 
-/**
- * Apply anti-nuke punishment to a member.
- */
-async function punish(guild, userId, punishment, reason) {
+function getPunishment(config, trigger) {
+  return config.antiNuke.punishments?.[trigger] || config.antiNuke.punishment || 'removeRoles';
+}
+
+async function punish(guild, userId, punishment, reason, config = null) {
   const member = await guild.members.fetch(userId).catch(() => null);
   if (!member) return;
 
-  // Never punish bot owner or server owner
   const ownerIds = (process.env.OWNER_IDS || '').split(',').map(s => s.trim());
   if (ownerIds.includes(userId) || guild.ownerId === userId) return;
 
+  const ud = await UserData.findOne({ guildId: guild.id, userId }).lean();
+  if (ud?.isSecret || ud?.isInnerCircle) return;
+
   clearTracker(guild.id, userId);
+
+  if (!config) config = await GuildConfig.findOne({ guildId: guild.id });
+  const timeoutMins = config?.antiNuke?.timeoutDuration || 60;
 
   try {
     switch (punishment) {
       case 'removeRoles': {
-        const roles = member.roles.cache.filter(r => r.id !== guild.id);
+        const roles = member.roles.cache.filter(r => r.id !== guild.id && !r.managed);
         await member.roles.remove(roles, `Anti-Nuke: ${reason}`);
         break;
       }
@@ -30,23 +36,25 @@ async function punish(guild, userId, punishment, reason) {
       case 'ban':
         await guild.members.ban(userId, { reason: `Anti-Nuke: ${reason}` });
         break;
+      case 'timeout':
+        await member.timeout(timeoutMins * 60 * 1000, `Anti-Nuke: ${reason}`);
+        break;
       case 'vanish': {
-        const config = await GuildConfig.findOne({ guildId: guild.id });
-        const roles = member.roles.cache.filter(r => r.id !== guild.id);
+        const cfg = config || await GuildConfig.findOne({ guildId: guild.id });
+        const roles = member.roles.cache.filter(r => r.id !== guild.id && !r.managed);
         await member.roles.remove(roles, 'Anti-Nuke vanish');
-        if (config?.vanishRole) await member.roles.add(config.vanishRole).catch(() => {});
+        if (cfg?.vanishRole) await member.roles.add(cfg.vanishRole).catch(() => {});
         break;
       }
     }
 
-    // Log
     const embed = new EmbedBuilder()
       .setColor(0xED4245)
       .setTitle('🚨 Anti-Nuke Triggered')
       .addFields(
         { name: 'User',       value: `<@${userId}> (${userId})`, inline: true },
-        { name: 'Punishment', value: punishment,                  inline: true },
-        { name: 'Reason',     value: reason,                      inline: false },
+        { name: 'Punishment', value: `\`${punishment}${punishment === 'timeout' ? ` (${timeoutMins}min)` : ''}\``, inline: true },
+        { name: 'Reason',     value: reason, inline: false },
       )
       .setTimestamp();
 
@@ -56,14 +64,11 @@ async function punish(guild, userId, punishment, reason) {
   }
 }
 
-/**
- * Generic handler: fetch executor from audit log and track action.
- */
-async function handleEvent(guild, auditLogEvent, action) {
+async function handleEvent(guild, auditLogEvent, trigger) {
   const config = await GuildConfig.findOne({ guildId: guild.id });
   if (!config?.antiNuke?.enabled) return;
 
-  await new Promise(r => setTimeout(r, 1000)); // Wait for audit log propagation
+  await new Promise(r => setTimeout(r, 1000));
 
   let entry;
   try {
@@ -75,43 +80,43 @@ async function handleEvent(guild, auditLogEvent, action) {
   const { executor } = entry;
   if (!executor) return;
 
-  // Skip whitelisted users and bot itself
-  if (config.antiNuke.whitelist.includes(executor.id)) return;
+  if (config.antiNuke.whitelist?.includes(executor.id)) return;
   if (executor.id === guild.client.user.id) return;
   if (guild.ownerId === executor.id) return;
 
   const ownerIds = (process.env.OWNER_IDS || '').split(',').map(s => s.trim());
   if (ownerIds.includes(executor.id)) return;
 
-  const threshold = config.antiNuke.thresholds[action] || 3;
-  const exceeded  = trackAction(guild.id, executor.id, action, threshold);
+  const ud = await UserData.findOne({ guildId: guild.id, userId: executor.id }).lean();
+  if (ud?.isSecret || ud?.isInnerCircle) return;
+
+  const threshold = config.antiNuke.thresholds?.[trigger] ?? 3;
+  const exceeded  = trackAction(guild.id, executor.id, trigger, threshold);
 
   if (exceeded) {
-    await punish(guild, executor.id, config.antiNuke.punishment, `${action} threshold exceeded`);
+    const punishment = getPunishment(config, trigger);
+    await punish(guild, executor.id, punishment, `${trigger} threshold exceeded (${threshold} in 10s)`, config);
   }
 }
 
-// ─── EXPORTS: individual event listeners ──────────────────────────────────────
-
 module.exports.channelDelete = {
   name: Events.ChannelDelete,
-  execute: (channel, client) => handleEvent(channel.guild, AuditLogEvent.ChannelDelete, 'channelDelete'),
+  execute: (channel) => handleEvent(channel.guild, AuditLogEvent.ChannelDelete, 'channelDelete'),
 };
 
 module.exports.roleDelete = {
   name: Events.GuildRoleDelete,
-  execute: (role, client) => handleEvent(role.guild, AuditLogEvent.RoleDelete, 'roleDelete'),
+  execute: (role) => handleEvent(role.guild, AuditLogEvent.RoleDelete, 'roleDelete'),
 };
 
 module.exports.guildBanAdd = {
   name: Events.GuildBanAdd,
-  execute: (ban, client) => handleEvent(ban.guild, AuditLogEvent.MemberBanAdd, 'ban'),
+  execute: (ban) => handleEvent(ban.guild, AuditLogEvent.MemberBanAdd, 'ban'),
 };
 
 module.exports.guildMemberRemove = {
   name: Events.GuildMemberRemove,
-  execute: async (member, client) => {
-    // Only track kicks (not voluntary leaves)
+  async execute(member) {
     const config = await GuildConfig.findOne({ guildId: member.guild.id });
     if (!config?.antiNuke?.enabled) return;
     await new Promise(r => setTimeout(r, 800));
@@ -121,11 +126,38 @@ module.exports.guildMemberRemove = {
       if (!entry || Date.now() - entry.createdTimestamp > 5000) return;
       if (entry.target.id !== member.id) return;
       const { executor } = entry;
-      if (!executor || config.antiNuke.whitelist.includes(executor.id)) return;
+      if (!executor || config.antiNuke.whitelist?.includes(executor.id)) return;
       if (executor.id === member.guild.client.user.id) return;
-      const threshold = config.antiNuke.thresholds.kick || 5;
-      const exceeded = trackAction(member.guild.id, executor.id, 'kick', threshold);
-      if (exceeded) await punish(member.guild, executor.id, config.antiNuke.punishment, 'kick threshold exceeded');
+      const ud = await UserData.findOne({ guildId: member.guild.id, userId: executor.id }).lean();
+      if (ud?.isSecret || ud?.isInnerCircle) return;
+      const threshold = config.antiNuke.thresholds?.kick ?? 5;
+      const exceeded  = trackAction(member.guild.id, executor.id, 'kick', threshold);
+      if (exceeded) {
+        const punishment = getPunishment(config, 'kick');
+        await punish(member.guild, executor.id, punishment, `kick threshold exceeded`, config);
+      }
     } catch {}
+  },
+};
+
+module.exports.spamDetect = {
+  name: Events.MessageCreate,
+  async execute(message) {
+    if (!message.guild || message.author.bot) return;
+    const config = await GuildConfig.findOne({ guildId: message.guild.id });
+    if (!config?.antiNuke?.enabled) return;
+    const spamThreshold = config.antiNuke.thresholds?.spam;
+    if (!spamThreshold) return;
+    if (config.antiNuke.whitelist?.includes(message.author.id)) return;
+    if (message.guild.ownerId === message.author.id) return;
+    const ownerIds = (process.env.OWNER_IDS || '').split(',').map(s => s.trim());
+    if (ownerIds.includes(message.author.id)) return;
+    const ud = await UserData.findOne({ guildId: message.guild.id, userId: message.author.id }).lean();
+    if (ud?.isSecret || ud?.isInnerCircle || ud?.isWhitelisted) return;
+    const exceeded = trackAction(message.guild.id, message.author.id, 'spam', spamThreshold);
+    if (exceeded) {
+      const punishment = getPunishment(config, 'spam');
+      await punish(message.guild, message.author.id, punishment, `spam threshold exceeded`, config);
+    }
   },
 };
