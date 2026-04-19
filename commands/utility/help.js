@@ -43,6 +43,9 @@ const COMMAND_DATA = {
     { name: 'roles',         desc: 'Show all roles in the server',                              example: '.roles' },
     { name: 'removeall',     desc: 'Remove a role from every member that has it',               example: '.removeall @Muted' },
     { name: 'restore',       desc: 'Restore saved roles to a user',                             example: '.restore @John' },
+    { name: 'pr',            desc: 'Promote a user X steps up the ladder (removes old rank)',    example: '.pr @John 1 (1 step up)\n.pr @John 3 (3 steps up)' },
+    { name: 'dem',           desc: 'Demote a user X steps down the ladder',                      example: '.dem @John 1\n.dem @John 2' },
+    { name: 'prsetup',       desc: 'Configure the promotion ladder (add/remove/protect roles)',   example: '.prsetup add @Recruit\n.prsetup add @Member\n.prsetup protect @ROOT-ACCESS\n.prsetup list' },
   ],
   owner: [
     { name: 'add',               desc: 'Add a user to the public whitelist (bypass clean etc)', example: '.add @John' },

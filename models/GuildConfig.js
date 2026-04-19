@@ -11,12 +11,12 @@ const guildConfigSchema = new Schema({
   v2Roles: { type: [String], default: [] },
   v3Roles: { type: [String], default: [] },
 
-  logChannel:          { type: String, default: null }, // mod logs (commands + bans etc)
-  deleteEditChannel:   { type: String, default: null }, // deleted/edited messages
-  welcomeChannel:      { type: String, default: null }, // join/leave messages
+  logChannel:          { type: String, default: null },
+  deleteEditChannel:   { type: String, default: null },
+  welcomeChannel:      { type: String, default: null },
 
   antiNuke: {
-    enabled:    { type: Boolean, default: false },
+    enabled:         { type: Boolean, default: false },
     thresholds: {
       channelDelete: { type: Number, default: 3 },
       roleDelete:    { type: Number, default: 3 },
@@ -24,11 +24,8 @@ const guildConfigSchema = new Schema({
       kick:          { type: Number, default: 5 },
       spam:          { type: Number, default: 5 },
     },
-    // Timeout duration in minutes (used when punishment is 'timeout')
     timeoutDuration: { type: Number, default: 60 },
-    // Global fallback punishment
-    punishment: { type: String, enum: ['removeRoles', 'kick', 'ban', 'vanish', 'timeout'], default: 'removeRoles' },
-    // Per-trigger punishments (override global)
+    punishment:      { type: String, enum: ['removeRoles', 'kick', 'ban', 'vanish', 'timeout'], default: 'removeRoles' },
     punishments: {
       channelDelete: { type: String, default: null },
       roleDelete:    { type: String, default: null },
@@ -36,14 +33,12 @@ const guildConfigSchema = new Schema({
       kick:          { type: String, default: null },
       spam:          { type: String, default: null },
     },
-    // Block user-installed/personal app interactions
     blockUserApps: { type: Boolean, default: true },
-    whitelist: { type: [String], default: [] },
+    whitelist:     { type: [String], default: [] },
   },
 
-  j2cChannel:  { type: String, default: null },
-  j2cCategory: { type: String, default: null },
-
+  j2cChannel:       { type: String, default: null },
+  j2cCategory:      { type: String, default: null },
   cleanChannels:    { type: [String], default: [] },
   allowedPingRoles: { type: [String], default: [] },
 
@@ -56,6 +51,12 @@ const guildConfigSchema = new Schema({
 
   adminPermsEnabled: { type: Boolean, default: true },
   savedRolePerms:    { type: String, default: '' },
+
+  // Promotion system
+  // Ordered list of role IDs from LOWEST to HIGHEST rank
+  promotionRoles:    { type: [String], default: [] },
+  // Roles that are immune to deletion during promotion
+  promotionProtectedRoles: { type: [String], default: [] },
 
 }, { timestamps: true });
 
