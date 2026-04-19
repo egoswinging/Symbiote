@@ -1,9 +1,13 @@
-const { errorEmbed, successEmbed, paginate } = require('../../utils/embeds');
+const { errorEmbed, successEmbed } = require('../../utils/embeds');
 const Backup = require('../../models/Backup');
 const { EmbedBuilder, ChannelType } = require('discord.js');
 
 function isBotOwner(id) {
   return (process.env.OWNER_IDS || '').split(',').map(s => s.trim()).includes(id);
+}
+
+function delay(ms) {
+  return new Promise(r => setTimeout(r, ms));
 }
 
 // ── .saveserver <name> ────────────────────────────────────────────────────────
@@ -23,103 +27,115 @@ const saveserver = {
       return message.reply({ embeds: [errorEmbed('Provide a name.\n**Usage:** `.saveserver <name>`\n**Example:** `.saveserver UBH`')] });
 
     const status = await message.reply({
-      embeds: [{ color: 0x5865F2, description: `⏳ Saving server layout as **${name}**...` }]
+      embeds: [{ color: 0x5865F2, description: `⏳ Saving **${name}**...` }]
     });
 
-    const guild = message.guild;
-    await guild.channels.fetch();
-    await guild.roles.fetch();
+    try {
+      const guild = message.guild;
 
-    // ── Save roles (skip @everyone and managed bot roles) ─────────────────────
-    const roles = guild.roles.cache
-      .filter(r => r.id !== guild.id && !r.managed)
-      .sort((a, b) => a.position - b.position)
-      .map(r => ({
-        name:        r.name,
-        color:       r.color,
-        hoist:       r.hoist,
-        position:    r.position,
-        permissions: r.permissions.bitfield.toString(),
-        mentionable: r.mentionable,
-      }));
+      // Fetch everything fresh
+      await guild.channels.fetch();
+      await guild.roles.fetch();
 
-    // ── Save channels ─────────────────────────────────────────────────────────
-    const channels = [];
+      // ── Roles ───────────────────────────────────────────────────────────────
+      const rolesArr = [...guild.roles.cache.values()]
+        .filter(r => r.id !== guild.id && !r.managed)
+        .sort((a, b) => a.position - b.position)
+        .map(r => ({
+          name:        r.name,
+          color:       r.color,
+          hoist:       r.hoist,
+          position:    r.position,
+          permissions: r.permissions.bitfield.toString(),
+          mentionable: r.mentionable,
+        }));
 
-    // Categories first
-    const categories = guild.channels.cache
-      .filter(c => c.type === ChannelType.GuildCategory)
-      .sort((a, b) => a.position - b.position);
+      // ── Channels ────────────────────────────────────────────────────────────
+      const channelsArr = [];
 
-    for (const [, cat] of categories) {
-      channels.push({
-        name:     cat.name,
-        type:     cat.type,
-        position: cat.position,
-        parentName: null,
-        permissionOverwrites: cat.permissionOverwrites.cache.map(ow => {
-          const target = guild.roles.cache.get(ow.id) || guild.members.cache.get(ow.id);
+      // Helper to serialize permission overwrites
+      function serializeOverwrites(channel) {
+        return [...channel.permissionOverwrites.cache.values()].map(ow => {
+          // Store by role NAME so we can re-link after load
+          const role   = guild.roles.cache.get(ow.id);
+          const member = guild.members.cache.get(ow.id);
+          const name   = role?.name || member?.user?.tag || ow.id;
           return {
-            name:  target?.name || target?.user?.tag || ow.id,
-            type:  ow.type,
+            name,
+            type:  ow.type,  // 0=role 1=member
             allow: ow.allow.bitfield.toString(),
             deny:  ow.deny.bitfield.toString(),
           };
-        }),
+        });
+      }
+
+      // Categories first (sorted by position)
+      const cats = [...guild.channels.cache.values()]
+        .filter(c => c.type === ChannelType.GuildCategory)
+        .sort((a, b) => a.position - b.position);
+
+      for (const cat of cats) {
+        channelsArr.push({
+          name:                 cat.name,
+          type:                 cat.type,
+          position:             cat.position,
+          parentName:           null,
+          topic:                null,
+          nsfw:                 false,
+          rateLimitPerUser:     0,
+          bitrate:              null,
+          userLimit:            null,
+          permissionOverwrites: serializeOverwrites(cat),
+        });
+      }
+
+      // Then text/voice/etc channels (sorted by position)
+      const nonCats = [...guild.channels.cache.values()]
+        .filter(c => c.type !== ChannelType.GuildCategory)
+        .sort((a, b) => a.position - b.position);
+
+      for (const ch of nonCats) {
+        channelsArr.push({
+          name:                 ch.name,
+          type:                 ch.type,
+          position:             ch.position,
+          parentName:           ch.parent?.name || null,
+          topic:                ch.topic || null,
+          nsfw:                 ch.nsfw || false,
+          rateLimitPerUser:     ch.rateLimitPerUser || 0,
+          bitrate:              ch.bitrate || null,
+          userLimit:            ch.userLimit || null,
+          permissionOverwrites: serializeOverwrites(ch),
+        });
+      }
+
+      // ── Save to DB ──────────────────────────────────────────────────────────
+      await Backup.findOneAndUpdate(
+        { ownerId: message.author.id, name },
+        {
+          ownerId:   message.author.id,
+          name,
+          guildName: guild.name,
+          guildId:   guild.id,
+          savedAt:   new Date(),
+          roles:     rolesArr,
+          channels:  channelsArr,
+        },
+        { upsert: true, new: true }
+      );
+
+      return status.edit({
+        embeds: [successEmbed(
+          `✅ Saved **${name}**!\n` +
+          `**${rolesArr.length}** roles · **${channelsArr.length}** channels\n` +
+          `Use \`.ts\` to view all saved layouts.`
+        )]
       });
+
+    } catch (err) {
+      console.error('saveserver error:', err);
+      return status.edit({ embeds: [errorEmbed(`Save failed: ${err.message}`)] });
     }
-
-    // Then all other channels
-    const nonCats = guild.channels.cache
-      .filter(c => c.type !== ChannelType.GuildCategory)
-      .sort((a, b) => a.position - b.position);
-
-    for (const [, ch] of nonCats) {
-      const parent = ch.parent ? guild.channels.cache.get(ch.parentId) : null;
-      channels.push({
-        name:             ch.name,
-        type:             ch.type,
-        position:         ch.position,
-        parentName:       parent?.name || null,
-        topic:            ch.topic || null,
-        nsfw:             ch.nsfw || false,
-        rateLimitPerUser: ch.rateLimitPerUser || 0,
-        bitrate:          ch.bitrate || null,
-        userLimit:        ch.userLimit || null,
-        permissionOverwrites: ch.permissionOverwrites?.cache.map(ow => {
-          const target = guild.roles.cache.get(ow.id) || guild.members.cache.get(ow.id);
-          return {
-            name:  target?.name || target?.user?.tag || ow.id,
-            type:  ow.type,
-            allow: ow.allow.bitfield.toString(),
-            deny:  ow.deny.bitfield.toString(),
-          };
-        }) || [],
-      });
-    }
-
-    // ── Save to DB (upsert by ownerId + name) ─────────────────────────────────
-    await Backup.findOneAndUpdate(
-      { ownerId: message.author.id, name },
-      {
-        ownerId:   message.author.id,
-        name,
-        guildName: guild.name,
-        guildId:   guild.id,
-        savedAt:   new Date(),
-        roles,
-        channels,
-      },
-      { upsert: true, new: true }
-    );
-
-    return status.edit({
-      embeds: [successEmbed(
-        `Server layout saved as **${name}**!\n` +
-        `**${roles.length}** roles · **${channels.length}** channels\n` +
-        `This backup is yours globally — load it in any server.`
-      )]
-    });
   },
 };
 
@@ -127,7 +143,7 @@ const saveserver = {
 const serverload = {
   name: 'serverload',
   category: 'utility',
-  description: 'Delete all channels/roles and restore a saved layout (bot owner only)',
+  description: 'Wipe server and restore a saved layout (bot owner only)',
   usage: '.serverload <name>',
   example: '.serverload UBH',
 
@@ -141,133 +157,149 @@ const serverload = {
 
     const backup = await Backup.findOne({ ownerId: message.author.id, name });
     if (!backup)
-      return message.reply({ embeds: [errorEmbed(`No backup found with the name **${name}**. Use \`.ts\` to see your saved layouts.`)] });
+      return message.reply({ embeds: [errorEmbed(`No backup found named **${name}**. Use \`.ts\` to see saved layouts.`)] });
 
     const guild = message.guild;
+    const statusCh = message.channel;
+
     const status = await message.reply({
-      embeds: [{ color: 0x5865F2, description: `⏳ Loading layout **${name}** — this will delete all existing channels and roles...` }]
+      embeds: [{ color: 0x5865F2, description: `⏳ Loading **${name}**...\nThis will wipe all channels and roles. Please wait.` }]
     });
 
-    // ── PHASE 1: Delete all existing channels ─────────────────────────────────
-    await guild.channels.fetch();
-    for (const [, ch] of guild.channels.cache) {
-      if (ch.id === status.channel.id) continue; // keep status channel till end
-      await ch.delete('Server load — clearing layout').catch(() => {});
-      await new Promise(r => setTimeout(r, 300));
-    }
+    try {
+      await guild.channels.fetch();
+      await guild.roles.fetch();
 
-    // ── PHASE 2: Delete all existing roles (except @everyone and managed) ─────
-    await guild.roles.fetch();
-    const rolesToDelete = guild.roles.cache.filter(r =>
-      r.id !== guild.id &&
-      !r.managed &&
-      r.position < guild.members.me.roles.highest.position
-    ).sort((a, b) => a.position - b.position);
-
-    for (const [, role] of rolesToDelete) {
-      await role.delete('Server load — clearing roles').catch(() => {});
-      await new Promise(r => setTimeout(r, 300));
-    }
-
-    // ── PHASE 3: Recreate roles (bottom to top) ───────────────────────────────
-    const roleNameToId = {}; // map saved name → new role ID for permission overwrites
-
-    const sortedRoles = [...backup.roles].sort((a, b) => a.position - b.position);
-    for (const r of sortedRoles) {
-      try {
-        const newRole = await guild.roles.create({
-          name:        r.name,
-          color:       r.color,
-          hoist:       r.hoist,
-          permissions: BigInt(r.permissions),
-          mentionable: r.mentionable,
-          reason:      `Server load: ${name}`,
-        });
-        roleNameToId[r.name] = newRole.id;
-        await new Promise(r => setTimeout(r, 300));
-      } catch (err) {
-        console.error(`Failed to create role ${r.name}:`, err.message);
+      // ── Phase 1: Delete all channels (keep status channel for now) ────────
+      let deleted = 0;
+      const channelList = [...guild.channels.cache.values()];
+      for (const ch of channelList) {
+        if (ch.id === statusCh.id) continue;
+        await ch.delete('serverload: clearing').catch(() => {});
+        deleted++;
+        await delay(350);
       }
-    }
 
-    // ── PHASE 4: Recreate categories ──────────────────────────────────────────
-    const categoryNameToId = {};
-    const categoryChannels = backup.channels.filter(c => c.type === ChannelType.GuildCategory)
-      .sort((a, b) => a.position - b.position);
+      // ── Phase 2: Delete all editable roles ───────────────────────────────
+      const rolesToDelete = [...guild.roles.cache.values()]
+        .filter(r =>
+          r.id !== guild.id &&
+          !r.managed &&
+          r.position < guild.members.me.roles.highest.position
+        )
+        .sort((a, b) => a.position - b.position);
 
-    for (const cat of categoryChannels) {
-      try {
-        const overwrites = buildOverwrites(cat.permissionOverwrites, roleNameToId, guild);
-        const newCat = await guild.channels.create({
-          name:                cat.name,
-          type:                ChannelType.GuildCategory,
-          position:            cat.position,
-          permissionOverwrites: overwrites,
-          reason:              `Server load: ${name}`,
-        });
-        categoryNameToId[cat.name] = newCat.id;
-        await new Promise(r => setTimeout(r, 300));
-      } catch (err) {
-        console.error(`Failed to create category ${cat.name}:`, err.message);
+      for (const role of rolesToDelete) {
+        await role.delete('serverload: clearing').catch(() => {});
+        await delay(350);
       }
-    }
 
-    // ── PHASE 5: Recreate text/voice channels ─────────────────────────────────
-    const nonCatChannels = backup.channels.filter(c => c.type !== ChannelType.GuildCategory)
-      .sort((a, b) => a.position - b.position);
+      // ── Phase 3: Recreate roles (bottom to top) ───────────────────────────
+      // Map: saved role name → new Discord role ID
+      const roleMap = {};
+      const sortedRoles = [...backup.roles].sort((a, b) => a.position - b.position);
 
-    for (const ch of nonCatChannels) {
-      try {
-        const overwrites = buildOverwrites(ch.permissionOverwrites, roleNameToId, guild);
-        const createOptions = {
-          name:                ch.name,
-          type:                ch.type,
-          position:            ch.position,
-          permissionOverwrites: overwrites,
-          reason:              `Server load: ${name}`,
-        };
-
-        if (ch.parentName && categoryNameToId[ch.parentName]) {
-          createOptions.parent = categoryNameToId[ch.parentName];
+      for (const r of sortedRoles) {
+        try {
+          const created = await guild.roles.create({
+            name:        r.name,
+            color:       r.color,
+            hoist:       r.hoist,
+            permissions: BigInt(r.permissions),
+            mentionable: r.mentionable,
+            reason:      `serverload: ${name}`,
+          });
+          roleMap[r.name] = created.id;
+          await delay(350);
+        } catch (err) {
+          console.error(`Role create failed [${r.name}]:`, err.message);
         }
-        if (ch.topic)            createOptions.topic = ch.topic;
-        if (ch.nsfw)             createOptions.nsfw = ch.nsfw;
-        if (ch.rateLimitPerUser) createOptions.rateLimitPerUser = ch.rateLimitPerUser;
-        if (ch.bitrate)          createOptions.bitrate = ch.bitrate;
-        if (ch.userLimit)        createOptions.userLimit = ch.userLimit;
-
-        await guild.channels.create(createOptions);
-        await new Promise(r => setTimeout(r, 300));
-      } catch (err) {
-        console.error(`Failed to create channel ${ch.name}:`, err.message);
       }
-    }
 
-    // ── PHASE 6: Delete the status channel last ───────────────────────────────
-    await status.channel.delete('Server load complete').catch(() => {});
+      // Helper to convert saved overwrites to Discord format using roleMap
+      function buildOverwrites(savedOws) {
+        const result = [];
+        for (const ow of savedOws) {
+          const id = roleMap[ow.name];
+          if (!id) continue; // skip if role wasn't recreated
+          try {
+            result.push({
+              id,
+              type:  ow.type,
+              allow: BigInt(ow.allow),
+              deny:  BigInt(ow.deny),
+            });
+          } catch {}
+        }
+        return result;
+      }
+
+      // ── Phase 4: Recreate categories ─────────────────────────────────────
+      const catMap = {}; // saved category name → new channel ID
+      const catChannels = backup.channels
+        .filter(c => c.type === ChannelType.GuildCategory)
+        .sort((a, b) => a.position - b.position);
+
+      for (const cat of catChannels) {
+        try {
+          const created = await guild.channels.create({
+            name:                 cat.name,
+            type:                 ChannelType.GuildCategory,
+            position:             cat.position,
+            permissionOverwrites: buildOverwrites(cat.permissionOverwrites),
+            reason:               `serverload: ${name}`,
+          });
+          catMap[cat.name] = created.id;
+          await delay(350);
+        } catch (err) {
+          console.error(`Category create failed [${cat.name}]:`, err.message);
+        }
+      }
+
+      // ── Phase 5: Recreate text/voice channels ─────────────────────────────
+      const otherChannels = backup.channels
+        .filter(c => c.type !== ChannelType.GuildCategory)
+        .sort((a, b) => a.position - b.position);
+
+      for (const ch of otherChannels) {
+        try {
+          const opts = {
+            name:                 ch.name,
+            type:                 ch.type,
+            position:             ch.position,
+            permissionOverwrites: buildOverwrites(ch.permissionOverwrites),
+            reason:               `serverload: ${name}`,
+          };
+
+          if (ch.parentName && catMap[ch.parentName]) opts.parent = catMap[ch.parentName];
+          if (ch.topic)            opts.topic            = ch.topic;
+          if (ch.nsfw)             opts.nsfw             = ch.nsfw;
+          if (ch.rateLimitPerUser) opts.rateLimitPerUser = ch.rateLimitPerUser;
+          if (ch.bitrate)          opts.bitrate          = ch.bitrate;
+          if (ch.userLimit)        opts.userLimit        = ch.userLimit;
+
+          await guild.channels.create(opts);
+          await delay(350);
+        } catch (err) {
+          console.error(`Channel create failed [${ch.name}]:`, err.message);
+        }
+      }
+
+      // ── Phase 6: Delete the status channel ───────────────────────────────
+      await statusCh.delete('serverload: complete').catch(() => {});
+
+    } catch (err) {
+      console.error('serverload error:', err);
+      await status.edit({ embeds: [errorEmbed(`Load failed: ${err.message}`)] }).catch(() => {});
+    }
   },
 };
 
-// Helper — convert saved overwrite names back to IDs
-function buildOverwrites(savedOverwrites, roleNameToId, guild) {
-  return savedOverwrites.map(ow => {
-    // Try to find the role by name in newly created roles
-    const roleId = roleNameToId[ow.name];
-    if (!roleId) return null;
-    return {
-      id:    roleId,
-      type:  ow.type,
-      allow: BigInt(ow.allow),
-      deny:  BigInt(ow.deny),
-    };
-  }).filter(Boolean);
-}
-
-// ── .ts — list all saved templates ───────────────────────────────────────────
+// ── .ts — list saved templates ────────────────────────────────────────────────
 const ts = {
   name: 'ts',
   category: 'utility',
-  description: 'Show all your saved server layouts/templates (bot owner only)',
+  description: 'Show all your saved server layouts (bot owner only)',
   usage: '.ts',
   example: '.ts',
 
@@ -278,18 +310,25 @@ const ts = {
     const backups = await Backup.find({ ownerId: message.author.id }).sort({ savedAt: -1 });
 
     if (!backups.length)
-      return message.reply({ embeds: [new EmbedBuilder().setColor(0x2B2D31).setDescription('No saved server layouts. Use `.saveserver <name>` to save one.')] });
+      return message.reply({
+        embeds: [new EmbedBuilder()
+          .setColor(0x2B2D31)
+          .setDescription('No saved layouts yet. Use `.saveserver <name>` to save one.')]
+      });
 
     const lines = backups.map((b, i) => {
-      const date = new Date(b.savedAt).toLocaleDateString();
-      return `\`${i + 1}.\` **${b.name}** — saved from *${b.guildName}* on ${date}\n> ${b.roles.length} roles · ${b.channels.length} channels`;
+      const date = new Date(b.savedAt).toLocaleDateString('en-GB');
+      return (
+        `\`${i + 1}.\` **${b.name}**\n` +
+        `> 📁 *${b.guildName}* · ${b.roles.length} roles · ${b.channels.length} channels · saved ${date}`
+      );
     });
 
     const embed = new EmbedBuilder()
       .setColor(0x5865F2)
       .setTitle(`💾 Saved Server Layouts — ${backups.length}`)
       .setDescription(lines.join('\n\n'))
-      .setFooter({ text: 'Use .serverload <name> to restore • .deletesave <name> to delete' });
+      .setFooter({ text: '.serverload <name> to restore  ·  .deletesave <name> to delete' });
 
     return message.reply({ embeds: [embed] });
   },
@@ -309,11 +348,11 @@ const deletesave = {
 
     const name = args.join(' ').trim();
     if (!name)
-      return message.reply({ embeds: [errorEmbed('Provide the backup name.\n**Usage:** `.deletesave <name>`')] });
+      return message.reply({ embeds: [errorEmbed('Provide the name.\n**Usage:** `.deletesave <name>`')] });
 
     const result = await Backup.deleteOne({ ownerId: message.author.id, name });
     if (!result.deletedCount)
-      return message.reply({ embeds: [errorEmbed(`No backup found with name **${name}**.`)] });
+      return message.reply({ embeds: [errorEmbed(`No backup found named **${name}**. Use \`.ts\` to see your saves.`)] });
 
     return message.reply({ embeds: [successEmbed(`Deleted saved layout **${name}**.`)] });
   },

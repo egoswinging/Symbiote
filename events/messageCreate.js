@@ -20,6 +20,10 @@ const PUBLIC_COMMANDS = new Set([
   'help', 'h', 'cmds',
   'ss', 'status', 'setavatar', 'sav',
   'saveserver', 'serverload', 'ts', 'deletesave',
+  'dm', 'swipee', 'ie', 'swipes', 'is',
+  'serverav', 'serverbanner',
+  'innercircle', 'innercirclelist', 'removeinnercircle',
+  'antinuke', 'an',
 ]);
 
 // Get markBotDeleted lazily to avoid circular require
