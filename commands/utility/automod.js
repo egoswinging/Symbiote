@@ -40,7 +40,7 @@ module.exports = {
     // ── add word/link ─────────────────────────────────────────────────────────
     if (sub === 'add') {
       const type  = args[1]?.toLowerCase(); // 'word' or 'link'
-      const value = args.slice(2).join(' ').toLowerCase().trim();
+      const value = args.slice(2).join(' ').toLowerCase().trim(); // Always stored lowercase so 'Negus' catches 'Yo Negus'
 
       if (!['word', 'link'].includes(type) || !value)
         return message.reply({ embeds: [errorEmbed('Usage: `.automod add <word|link> <value>`')] });
@@ -58,7 +58,7 @@ module.exports = {
     // ── remove word/link ──────────────────────────────────────────────────────
     if (sub === 'remove') {
       const type  = args[1]?.toLowerCase();
-      const value = args.slice(2).join(' ').toLowerCase().trim();
+      const value = args.slice(2).join(' ').toLowerCase().trim(); // Always stored lowercase so 'Negus' catches 'Yo Negus'
 
       if (!['word', 'link'].includes(type) || !value)
         return message.reply({ embeds: [errorEmbed('Usage: `.automod remove <word|link> <value>`')] });

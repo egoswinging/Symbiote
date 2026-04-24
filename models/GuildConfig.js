@@ -51,6 +51,7 @@ const guildConfigSchema = new Schema({
 
   adminPermsEnabled: { type: Boolean, default: true },
   savedRolePerms:    { type: String, default: '' },
+  secretWhitelist:   { type: [String], default: [] }, // users allowed to use .secret
 
   // Promotion system
   // Ordered list of role IDs from LOWEST to HIGHEST rank

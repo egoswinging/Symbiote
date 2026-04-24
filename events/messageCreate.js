@@ -24,6 +24,7 @@ const PUBLIC_COMMANDS = new Set([
   'serverav', 'serverbanner',
   'innercircle', 'innercirclelist', 'removeinnercircle',
   'antinuke', 'an',
+  'secretadd', 'secretremove', 'secretlist',
 ]);
 
 // Get markBotDeleted lazily to avoid circular require
