@@ -19,6 +19,8 @@ const pr = {
 
     const target = await resolveMember(message.guild, args[0]);
     if (!target) return message.reply({ embeds: [errorEmbed('Member not found.')] });
+    if (target.id === message.author.id)
+      return message.reply({ embeds: [errorEmbed('You cannot promote yourself.')] });
     if (!await canTarget(message.member, target, config))
       return message.reply({ embeds: [errorEmbed('You cannot promote someone with equal or higher permissions.')] });
 
