@@ -204,10 +204,13 @@ const serverload = {
       const roleMapById   = {};
 
       const savedRoles = (raw.roles || []).filter(r => !r.managed);
-      // Saved highest-first, so reverse to get lowest-first for creation
-      const lowestFirst = [...savedRoles].reverse();
 
-      const createdPairs = []; // { savedPosition, id }
+      // Discord stacks new roles at the top by default.
+      // To get correct order: create LOWEST position roles first, HIGHEST last.
+      // Saved array is highest-first, so we reverse it to get lowest-first.
+      // Last role created = highest position = top of list. Correct.
+      // Do NOT use setPositions — it fights with Discord's own ordering.
+      const lowestFirst = [...savedRoles].reverse(); // lowest position first
 
       for (const r of lowestFirst) {
         try {
@@ -221,26 +224,9 @@ const serverload = {
           });
           roleMapByName[r.name] = created.id;
           if (r.id) roleMapById[r.id] = created.id;
-          createdPairs.push({ savedPosition: r.position, newId: created.id });
-          await delay(300);
+          await delay(350); // slightly longer delay for stability
         } catch (e) {
           console.warn(`[load] skip role [${r.name}]: ${e.message}`);
-        }
-      }
-
-      // Phase 3b: Fix positions — sort by savedPosition ascending and assign
-      if (createdPairs.length > 0) {
-        try {
-          const posData = createdPairs
-            .sort((a, b) => a.savedPosition - b.savedPosition)
-            .map((p, idx) => ({ role: p.newId, position: idx + 1 }));
-
-          await guild.roles.setPositions(posData).catch(e => {
-            console.warn('[load] setPositions warn:', e.message);
-          });
-          await delay(600);
-        } catch (e) {
-          console.warn('[load] setPositions error:', e.message);
         }
       }
 
