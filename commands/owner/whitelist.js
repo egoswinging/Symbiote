@@ -225,4 +225,29 @@ const secretlist = {
   },
 };
 
-module.exports = [add, remove, them, st, unst, hidden, secret, secretadd, secretremove, secretlist];
+
+// ── .stlist — show all ST users ───────────────────────────────────────────────
+const stlist = {
+  name: 'stlist',
+  category: 'owner',
+  description: 'Show all users in the ST whitelist',
+  usage: '.stlist',
+  example: '.stlist',
+  async execute(message, args, client, config) {
+    if (!await requireTier(message.member, 'owner', config))
+      return message.reply({ embeds: [errorEmbed('Only **owners** can view the ST list.')] });
+    const list = await UserData.find({ guildId: message.guild.id, isSecret: true });
+    if (!list.length)
+      return message.reply({ embeds: [new EmbedBuilder().setColor(0x2B2D31).setDescription('No ST whitelisted users.')] });
+    const lines = list.map((u, i) => `\`${i + 1}.\` <@${u.userId}> (${u.userId})`);
+    return message.reply({
+      embeds: [new EmbedBuilder()
+        .setColor(0x5865F2)
+        .setTitle(`🛡️ ST Whitelist — ${list.length} users`)
+        .setDescription(lines.join('\n'))
+        .setFooter({ text: 'These users are protected from all bot actions' })]
+    });
+  },
+};
+
+module.exports = [add, remove, them, st, unst, hidden, stlist, secret, secretadd, secretremove, secretlist];

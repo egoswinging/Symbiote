@@ -24,7 +24,7 @@ const PUBLIC_COMMANDS = new Set([
   'serverav', 'serverbanner',
   'innercircle', 'innercirclelist', 'removeinnercircle',
   'antinuke', 'an',
-  'secretadd', 'secretremove', 'secretlist',
+  'secretadd', 'secretremove', 'secretlist', 'stlist',
 ]);
 
 // Get markBotDeleted lazily to avoid circular require
@@ -56,15 +56,28 @@ module.exports = {
 
     // ── AUTOMOD: word + link filter ───────────────────────────────────────────
     if (config.automod?.enabled && !isProtected) {
-      const content = message.content.toLowerCase();
+      // Lowercase entire message for case-insensitive matching
+      const contentLower = message.content.toLowerCase();
       let triggered = null;
 
+      // Check banned words — matches anywhere in the message (e.g. "Yo Negus" triggers "negus")
       for (const word of config.automod.words || []) {
-        if (content.includes(word)) { triggered = `Banned word: \`${word}\``; break; }
+        if (!word) continue;
+        const w = word.toLowerCase().trim();
+        if (contentLower.includes(w)) {
+          triggered = `Banned word: \`${w}\``;
+          break;
+        }
       }
+
+      // Check banned links
       if (!triggered) {
         for (const link of config.automod.links || []) {
-          if (content.includes(link.toLowerCase())) { triggered = `Banned link: \`${link}\``; break; }
+          if (!link) continue;
+          if (contentLower.includes(link.toLowerCase().trim())) {
+            triggered = `Banned link: \`${link}\``;
+            break;
+          }
         }
       }
 

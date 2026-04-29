@@ -24,8 +24,8 @@ function getOverwrites(ch, guild) {
         const role = guild.roles.cache.get(id);
         if (!role) continue;
         result.push({
-          roleId: String(role.id),   // save by ID for accuracy
-          name:   String(role.name), // save name as fallback
+          roleId: String(role.id),
+          name:   String(role.name),
           allow:  String(ow.allow?.bitfield ?? '0'),
           deny:   String(ow.deny?.bitfield  ?? '0'),
         });
@@ -61,7 +61,7 @@ const saveserver = {
       await guild.roles.fetch().catch(() => {});
       await guild.members.fetch().catch(() => {});
 
-      // ── Roles — save id too so we can match on load ──────────────────────
+      // Roles — sorted highest position first (how they appear in Discord UI)
       const roles = [];
       for (const [, r] of guild.roles.cache) {
         try {
@@ -78,26 +78,20 @@ const saveserver = {
           });
         } catch (e) { console.warn(`[save] skip role ${r?.name}: ${e.message}`); }
       }
-      roles.sort((a, b) => a.position - b.position);
+      // Save sorted by position DESCENDING (highest first = top of list)
+      roles.sort((a, b) => b.position - a.position);
 
-      // ── Bots ─────────────────────────────────────────────────────────────
       const bots = [];
       for (const [, m] of guild.members.cache) {
         if (!m.user.bot) continue;
-        bots.push({
-          id:       m.user.id,
-          username: m.user.username,
-          tag:      m.user.tag,
-        });
+        bots.push({ id: m.user.id, username: m.user.username, tag: m.user.tag });
       }
 
-      // ── Channels ─────────────────────────────────────────────────────────
       const channels = [];
       const allCh = [...guild.channels.cache.values()].filter(c => c && SAVEABLE.has(c.type));
 
       const cats = allCh.filter(c => c.type === ChannelType.GuildCategory)
         .sort((a, b) => safeNum(a.position) - safeNum(b.position));
-
       for (const cat of cats) {
         try {
           channels.push({
@@ -112,7 +106,6 @@ const saveserver = {
 
       const others = allCh.filter(c => c.type !== ChannelType.GuildCategory)
         .sort((a, b) => safeNum(a.position) - safeNum(b.position));
-
       for (const ch of others) {
         try {
           channels.push({
@@ -134,14 +127,13 @@ const saveserver = {
         { upsert: true }
       );
 
-      console.log(`[saveserver] ✅ "${name}" — ${roles.length} roles, ${channels.length} channels, ${bots.length} bots`);
+      console.log(`[saveserver] Saved "${name}": ${roles.length} roles, ${channels.length} channels, ${bots.length} bots`);
 
       return status.edit({
         embeds: [successEmbed(
           `✅ Saved **${name}**!\n\n` +
           `🎭 **${roles.length}** roles · 📁 **${channels.length}** channels · 🤖 **${bots.length}** bots\n\n` +
-          `Use \`.ts\` to view all saves.\n` +
-          `Use \`.serverload ${name}\` to restore in any server.`
+          `Use \`.ts\` to view saves · \`.serverload ${name}\` to restore`
         )]
       });
 
@@ -156,7 +148,7 @@ const saveserver = {
 const serverload = {
   name: 'serverload',
   category: 'utility',
-  description: 'Wipe server and fully restore a saved layout (bot owner only)',
+  description: 'Wipe server and restore a saved layout (bot owner only)',
   usage: '.serverload <n>',
   example: '.serverload UBH',
 
@@ -177,14 +169,14 @@ const serverload = {
     await message.delete().catch(() => {});
 
     const status = await statusCh.send({
-      embeds: [{ color: 0x5865F2, description: `⏳ Loading **${name}**...\nThis recreates all roles, permissions and channels exactly. Please wait.` }]
+      embeds: [{ color: 0x5865F2, description: `⏳ Loading **${name}**... please wait.` }]
     });
 
     try {
       await guild.channels.fetch().catch(() => {});
       await guild.roles.fetch().catch(() => {});
 
-      // ── Phase 1: Delete all channels (keep status channel) ────────────────
+      // Phase 1: Delete channels
       console.log('[load] Phase 1: Delete channels');
       for (const [, ch] of guild.channels.cache) {
         if (!ch || ch.id === statusCh.id) continue;
@@ -192,7 +184,7 @@ const serverload = {
         await delay(300);
       }
 
-      // ── Phase 2: Delete all non-managed, editable roles ───────────────────
+      // Phase 2: Delete roles
       console.log('[load] Phase 2: Delete roles');
       const myTop = guild.members.me?.roles?.highest?.position ?? 999;
       const toDelete = [...guild.roles.cache.values()]
@@ -203,22 +195,21 @@ const serverload = {
         await delay(300);
       }
 
-      // ── Phase 3: Create roles (lowest position first) ─────────────────────
-      // We create without position, then bulk-set positions after
-      console.log(`[load] Phase 3: Create ${(raw.roles || []).length} roles`);
+      // Phase 3: Create roles
+      // Saved as highest first. We need to create LOWEST first so Discord
+      // stacks them correctly, then use setPositions to fix the order.
+      console.log('[load] Phase 3: Create roles');
 
-      // oldId → newId mapping (for potential future use)
-      // name → newId mapping (for channel overwrites)
       const roleMapByName = {};
       const roleMapById   = {};
 
-      const sortedRoles = (raw.roles || [])
-        .filter(r => !r.managed)
-        .sort((a, b) => (a.position || 0) - (b.position || 0));
+      const savedRoles = (raw.roles || []).filter(r => !r.managed);
+      // Saved highest-first, so reverse to get lowest-first for creation
+      const lowestFirst = [...savedRoles].reverse();
 
-      // Create roles one by one, lowest first
-      const createdRoleList = []; // { savedPosition, role }
-      for (const r of sortedRoles) {
+      const createdPairs = []; // { savedPosition, id }
+
+      for (const r of lowestFirst) {
         try {
           const created = await guild.roles.create({
             name:        r.name || 'Role',
@@ -230,55 +221,43 @@ const serverload = {
           });
           roleMapByName[r.name] = created.id;
           if (r.id) roleMapById[r.id] = created.id;
-          createdRoleList.push({ savedPosition: r.position, role: created });
+          createdPairs.push({ savedPosition: r.position, newId: created.id });
           await delay(300);
         } catch (e) {
           console.warn(`[load] skip role [${r.name}]: ${e.message}`);
         }
       }
 
-      // ── Phase 3b: Set role positions in bulk ──────────────────────────────
-      // Discord setPositions takes array of { role, position }
-      if (createdRoleList.length > 0) {
+      // Phase 3b: Fix positions — sort by savedPosition ascending and assign
+      if (createdPairs.length > 0) {
         try {
-          // Sort by saved position and assign incremental positions
-          const positionData = createdRoleList
+          const posData = createdPairs
             .sort((a, b) => a.savedPosition - b.savedPosition)
-            .map((item, idx) => ({ role: item.role.id, position: idx + 1 }));
+            .map((p, idx) => ({ role: p.newId, position: idx + 1 }));
 
-          await guild.roles.setPositions(positionData).catch(e => {
-            console.warn('[load] setPositions failed:', e.message);
+          await guild.roles.setPositions(posData).catch(e => {
+            console.warn('[load] setPositions warn:', e.message);
           });
-          await delay(500);
+          await delay(600);
         } catch (e) {
-          console.warn('[load] bulk position failed:', e.message);
+          console.warn('[load] setPositions error:', e.message);
         }
       }
 
-      // Helper to build Discord permission overwrites
       function buildOws(savedOws) {
         if (!Array.isArray(savedOws)) return [];
-        const result = [];
-        for (const ow of savedOws) {
-          // Try to match by saved role ID first, then by name
-          const newId = (ow.roleId && roleMapById[ow.roleId])
-            || roleMapByName[ow.name];
-          if (!newId) continue;
+        return savedOws.map(ow => {
+          const newId = (ow.roleId && roleMapById[ow.roleId]) || roleMapByName[ow.name];
+          if (!newId) return null;
           try {
-            result.push({
-              id:    newId,
-              type:  0,
-              allow: BigInt(ow.allow || '0'),
-              deny:  BigInt(ow.deny  || '0'),
-            });
-          } catch {}
-        }
-        return result;
+            return { id: newId, type: 0, allow: BigInt(ow.allow || '0'), deny: BigInt(ow.deny || '0') };
+          } catch { return null; }
+        }).filter(Boolean);
       }
 
-      // ── Phase 4: Create categories ────────────────────────────────────────
+      // Phase 4: Create categories
       console.log('[load] Phase 4: Create categories');
-      const catMap = {}; // name → new channel id
+      const catMap = {};
       const cats = (raw.channels || [])
         .filter(c => c.type === ChannelType.GuildCategory)
         .sort((a, b) => (a.position || 0) - (b.position || 0));
@@ -293,7 +272,6 @@ const serverload = {
             reason:               `serverload: ${name}`,
           });
           catMap[cat.name] = created.id;
-          // Set position after creation
           await created.setPosition(i).catch(() => {});
           await delay(300);
         } catch (e) {
@@ -301,7 +279,7 @@ const serverload = {
         }
       }
 
-      // ── Phase 5: Create text/voice channels ───────────────────────────────
+      // Phase 5: Create channels
       console.log('[load] Phase 5: Create channels');
       const others = (raw.channels || [])
         .filter(c => CREATEABLE.has(c.type))
@@ -330,7 +308,7 @@ const serverload = {
         }
       }
 
-      // ── Phase 6: Send bot list ─────────────────────────────────────────────
+      // Phase 6: Bot list
       if (raw.bots?.length) {
         await delay(1000);
         const anyText = guild.channels.cache.find(c =>
@@ -344,13 +322,13 @@ const serverload = {
               .setColor(0x5865F2)
               .setTitle(`🤖 Bots from **${raw.guildName}** — ${raw.bots.length} bots`)
               .setDescription(botLines.join('\n'))
-              .setFooter({ text: 'These bots were in the original server. Re-invite them manually if needed.' })
+              .setFooter({ text: 'Re-invite these bots manually if needed.' })
               .setTimestamp()]
           }).catch(() => {});
         }
       }
 
-      console.log('[load] ✅ Complete');
+      console.log('[load] Complete');
       await statusCh.delete('serverload complete').catch(() => {});
 
     } catch (err) {
@@ -362,19 +340,15 @@ const serverload = {
 
 // ── .ts ─────────────────────────────────────────────────────────────────────
 const ts = {
-  name: 'ts',
-  category: 'utility',
+  name: 'ts', category: 'utility',
   description: 'Show all your saved server layouts (bot owner only)',
-  usage: '.ts',
-  example: '.ts',
+  usage: '.ts', example: '.ts',
   async execute(message, args, client, config) {
     if (!isBotOwner(message.author.id))
       return message.reply({ embeds: [errorEmbed('Only the **bot owner** can view saved layouts.')] });
-
     const backups = await Backup.collection.find({ ownerId: message.author.id }).sort({ savedAt: -1 }).toArray();
     if (!backups.length)
       return message.reply({ embeds: [new EmbedBuilder().setColor(0x2B2D31).setDescription('No saved layouts yet.\nUse `.saveserver <n>` to save one.')] });
-
     const lines = backups.map((b, i) => {
       const date = new Date(b.savedAt).toLocaleDateString('en-GB');
       const rc = Array.isArray(b.roles)    ? b.roles.length    : 0;
@@ -382,36 +356,24 @@ const ts = {
       const bc = Array.isArray(b.bots)     ? b.bots.length     : 0;
       return `\`${i + 1}.\` **${b.name}**\n> 📁 *${b.guildName}* · 🎭 ${rc} roles · 💬 ${cc} channels · 🤖 ${bc} bots · 📅 ${date}`;
     });
-
-    return message.reply({
-      embeds: [new EmbedBuilder()
-        .setColor(0x5865F2)
-        .setTitle(`💾 Saved Server Layouts — ${backups.length}`)
-        .setDescription(lines.join('\n\n'))
-        .setFooter({ text: '.serverload <n> to restore  ·  .deletesave <n> to delete' })]
-    });
+    return message.reply({ embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle(`💾 Saved Layouts — ${backups.length}`).setDescription(lines.join('\n\n')).setFooter({ text: '.serverload <n> to restore  ·  .deletesave <n> to delete' })] });
   },
 };
 
 // ── .deletesave ──────────────────────────────────────────────────────────────
 const deletesave = {
-  name: 'deletesave',
-  category: 'utility',
+  name: 'deletesave', category: 'utility',
   description: 'Delete a saved server layout by name (bot owner only)',
-  usage: '.deletesave <n>',
-  example: '.deletesave UBH',
+  usage: '.deletesave <n>', example: '.deletesave UBH',
   async execute(message, args, client, config) {
     if (!isBotOwner(message.author.id))
       return message.reply({ embeds: [errorEmbed('Only the **bot owner** can delete saved layouts.')] });
-
     const name = args.join(' ').trim();
     if (!name)
       return message.reply({ embeds: [errorEmbed('Provide the name.\n**Usage:** `.deletesave <n>`')] });
-
     const result = await Backup.collection.deleteOne({ ownerId: message.author.id, name });
     if (!result.deletedCount)
       return message.reply({ embeds: [errorEmbed(`No backup named **${name}**. Use \`.ts\` to see your saves.`)] });
-
     return message.reply({ embeds: [successEmbed(`Deleted saved layout **${name}**.`)] });
   },
 };

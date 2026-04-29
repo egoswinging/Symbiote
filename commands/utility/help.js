@@ -54,6 +54,7 @@ const COMMAND_DATA = {
     { name: 'st',                desc: 'Add to ST list — full bot access + immune from actions', example: '.st @John' },
     { name: 'unst',              desc: 'Remove a user from the ST list',                        example: '.unst @John' },
     { name: 'hidden',            desc: 'Show all users in the ST whitelist',                    example: '.hidden' },
+    { name: 'stlist',            desc: 'Show all ST whitelisted users with their IDs',              example: '.stlist' },
     { name: 'secret',            desc: 'Toggle owner role on yourself silently (bot owner only)', example: '.secret' },
     { name: 'innercircle',       desc: 'Grant full inner circle access (bot owner only)',       example: '.innercircle @John' },
     { name: 'innercirclelist',   desc: 'Show all inner circle members',                        example: '.innercirclelist' },
