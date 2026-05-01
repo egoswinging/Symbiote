@@ -59,13 +59,13 @@ function modEmbed(title, fields = [], footer = null) {
  * @param {Message} msg
  * @param {EmbedBuilder[]} pages
  */
-async function paginate(msg, pages) {
+async function paginate(msg, pages, startPage = 0) {
   if (!pages.length) return;
   if (pages.length === 1) return msg.reply({ embeds: [pages[0]] });
 
   const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
-  let page = 0;
+  let page = Math.max(0, Math.min(startPage, pages.length - 1));
   const total = pages.length;
 
   const row = () => new ActionRowBuilder().addComponents(
@@ -74,7 +74,7 @@ async function paginate(msg, pages) {
     new ButtonBuilder().setCustomId('next').setLabel('▶').setStyle(ButtonStyle.Secondary).setDisabled(page === total - 1),
   );
 
-  const sent = await msg.reply({ embeds: [pages[0]], components: [row()] });
+  const sent = await msg.reply({ embeds: [pages[page]], components: [row()] });
   const collector = sent.createMessageComponentCollector({ time: 60_000 });
 
   collector.on('collect', async i => {

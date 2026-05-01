@@ -203,16 +203,19 @@ const serverload = {
       const roleMapByName = {};
       const roleMapById   = {};
 
+      // Roles saved as highest-position-first (top of Discord list = first in array)
+      // We need to restore them in the EXACT same hierarchy
+      // Strategy: create all roles first (they'll stack randomly),
+      // then use setPositions with explicit position values to fix order
       const savedRoles = (raw.roles || []).filter(r => !r.managed);
 
-      // Discord stacks new roles at the top by default.
-      // To get correct order: create LOWEST position roles first, HIGHEST last.
-      // Saved array is highest-first, so we reverse it to get lowest-first.
-      // Last role created = highest position = top of list. Correct.
-      // Do NOT use setPositions — it fights with Discord's own ordering.
-      const lowestFirst = [...savedRoles].reverse(); // lowest position first
+      // Sort ascending by position (lowest first = bottom of list)
+      const ascendingRoles = [...savedRoles].sort((a, b) => (a.position || 0) - (b.position || 0));
 
-      for (const r of lowestFirst) {
+      const createdPairs = []; // { originalPosition, newId }
+
+      // Create all roles first
+      for (const r of ascendingRoles) {
         try {
           const created = await guild.roles.create({
             name:        r.name || 'Role',
@@ -224,9 +227,28 @@ const serverload = {
           });
           roleMapByName[r.name] = created.id;
           if (r.id) roleMapById[r.id] = created.id;
-          await delay(350); // slightly longer delay for stability
+          createdPairs.push({ originalPosition: r.position || 0, newId: created.id });
+          await delay(400);
         } catch (e) {
           console.warn(`[load] skip role [${r.name}]: ${e.message}`);
+        }
+      }
+
+      // Now fix positions using setPositions
+      // Sort by originalPosition ascending, assign positions 1..N
+      // Position 1 = just above @everyone (bottom), N = top
+      if (createdPairs.length > 0) {
+        try {
+          createdPairs.sort((a, b) => a.originalPosition - b.originalPosition);
+          const positionData = createdPairs.map((p, idx) => ({
+            role:     p.newId,
+            position: idx + 1, // 1 = bottom (above @everyone), N = top
+          }));
+          await guild.roles.setPositions(positionData);
+          await delay(800);
+          console.log(`[load] setPositions applied to ${positionData.length} roles`);
+        } catch (e) {
+          console.warn('[load] setPositions failed:', e.message);
         }
       }
 
