@@ -239,16 +239,28 @@ const serverload = {
       // Position 1 = just above @everyone (bottom), N = top
       if (createdPairs.length > 0) {
         try {
-          createdPairs.sort((a, b) => a.originalPosition - b.originalPosition);
-          const positionData = createdPairs.map((p, idx) => ({
+          // Use original saved position values directly
+          // Discord API accepts absolute position numbers
+          const positionData = createdPairs.map(p => ({
             role:     p.newId,
-            position: idx + 1, // 1 = bottom (above @everyone), N = top
+            position: p.originalPosition,
           }));
+          // Sort so highest positions are applied last (avoids conflicts)
+          positionData.sort((a, b) => a.position - b.position);
           await guild.roles.setPositions(positionData);
-          await delay(800);
-          console.log(`[load] setPositions applied to ${positionData.length} roles`);
+          await delay(1000);
+          console.log(`[load] setPositions done for ${positionData.length} roles`);
         } catch (e) {
-          console.warn('[load] setPositions failed:', e.message);
+          console.warn('[load] setPositions warn:', e.message);
+          // Fallback: set each role position individually
+          try {
+            const sorted = [...createdPairs].sort((a, b) => a.originalPosition - b.originalPosition);
+            for (let i = 0; i < sorted.length; i++) {
+              const role = guild.roles.cache.get(sorted[i].newId);
+              if (role) await role.setPosition(i + 1, { relative: false }).catch(() => {});
+              await delay(200);
+            }
+          } catch {}
         }
       }
 

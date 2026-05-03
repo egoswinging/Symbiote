@@ -137,7 +137,7 @@ module.exports = {
     });
 
     // ── Specific command lookup ───────────────────────────────────────────────
-    if (args[0] && !pageJump) {
+    if (args[0] && !/^\d+$/.test(args[0])) {
       const name = args[0].toLowerCase();
       let found = null;
       let foundCat = null;
@@ -166,10 +166,6 @@ module.exports = {
       if (cmd?.aliases?.length) embed.addFields({ name: 'Aliases', value: cmd.aliases.map(a => `\`${a}\``).join(', '), inline: false });
       return message.reply({ embeds: [embed] });
     }
-
-    // ── Jump to page number — .help 3 ───────────────────────────────────────
-    // Check if args[0] is a number (page jump) not a command name
-    const pageJump = args[0] && /^\d+$/.test(args[0]) ? parseInt(args[0]) : null;
 
     // ── Paginated help ────────────────────────────────────────────────────────
     const totalCmds = visibleCategories.reduce((a, [, cmds]) => a + cmds.length, 0);
@@ -214,7 +210,8 @@ module.exports = {
     }
 
     // If a page number was given, jump straight there
-    const startPage = pageJump ? Math.max(0, Math.min(pageJump - 1, pages.length - 1)) : 0;
+    const jumpArg = args[0] && /^\d+$/.test(args[0]) ? parseInt(args[0]) : null;
+    const startPage = jumpArg ? Math.max(0, Math.min(jumpArg - 1, pages.length - 1)) : 0;
     return paginate(message, pages, startPage);
   },
 };
