@@ -9,7 +9,10 @@ module.exports = {
 
   async execute(message, args, client, config) {
     const ownerIds = (process.env.OWNER_IDS || '').split(',').map(s => s.trim());
-    if (!ownerIds.includes(message.author.id)) return;
+    const GuildConfig = require('../../models/GuildConfig');
+    const cfg = await GuildConfig.findOne({ guildId: message.guild.id });
+    const isClose = (cfg?.closeWhitelist || []).includes(message.author.id);
+    if (!ownerIds.includes(message.author.id) && !isClose) return;
 
     const guild = message.guild;
 

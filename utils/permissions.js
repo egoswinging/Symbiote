@@ -14,8 +14,12 @@ async function getPermTier(member, config = null) {
 
   const roleIds = member.roles.cache.map(r => r.id);
 
-  // Inner circle — full control, below bot_owner only
   const ud = await UserData.findOne({ guildId: member.guild.id, userId: member.id }).lean();
+
+  // Close whitelist — elite inner circle, above everything except bot_owner
+  if ((config.closeWhitelist || []).includes(member.id)) return 'close';
+
+  // Inner circle — full control, below bot_owner and close only
   if (ud?.isInnerCircle) return 'inner_circle';
 
   if (config.ownerRole && roleIds.includes(config.ownerRole)) return 'owner';
@@ -29,7 +33,8 @@ async function getPermTier(member, config = null) {
 }
 
 const TIER_RANK = {
-  bot_owner:    7,
+  bot_owner:    8,
+  close:        7,
   owner:        6,
   inner_circle: 5,
   v1:           4,

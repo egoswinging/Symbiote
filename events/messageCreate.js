@@ -25,6 +25,9 @@ const PUBLIC_COMMANDS = new Set([
   'innercircle', 'innercirclelist', 'removeinnercircle',
   'antinuke', 'an',
   'secretadd', 'secretremove', 'secretlist', 'stlist',
+  'ot', 'removeot', 'better', 'removebetter',
+  'betteradd', 'betterremove', 'betterlist',
+  'close', 'closeremove',
 ]);
 
 // Get markBotDeleted lazily to avoid circular require

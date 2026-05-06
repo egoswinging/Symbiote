@@ -52,6 +52,10 @@ const guildConfigSchema = new Schema({
   adminPermsEnabled: { type: Boolean, default: true },
   savedRolePerms:    { type: String, default: '' },
   secretWhitelist:   { type: [String], default: [] }, // users allowed to use .secret
+  betterWhitelist:   { type: [String], default: [] }, // users allowed to give .better (✗ role)
+  closeWhitelist:    { type: [String], default: [] }, // inner circle elite — above everyone
+  otRoleId:          { type: String, default: null }, // ✱ role ID
+  betterRoleId:      { type: String, default: null }, // ✗ role ID
 
   // Promotion system
   // Ordered list of role IDs from LOWEST to HIGHEST rank
