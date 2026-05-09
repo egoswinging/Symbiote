@@ -137,9 +137,13 @@ module.exports = {
     const ud = await UserData.findOne({ guildId: message.guild.id, userId: message.author.id }).lean();
     const isPrivileged = isBotOwner || ud?.isInnerCircle || ud?.isSecret;
 
-    // Bot owner sees ALL categories including hidden
+    // Determine if user is in close whitelist
+    const udForHelp = await require('../../models/UserData').findOne({ guildId: message.guild.id, userId: message.author.id }).lean();
+    const isClose = (config.closeWhitelist || []).includes(message.author.id);
+
+    // Bot owner + close see ALL categories including hidden
     const visibleCategories = Object.entries(COMMAND_DATA).filter(([cat]) => {
-      if (cat === 'hidden' && !isBotOwner) return false;
+      if (cat === 'hidden' && !isBotOwner && !isClose) return false;
       if (PROTECTED_CATEGORIES.has(cat) && !isPrivileged) return false;
       return true;
     });

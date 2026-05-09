@@ -1,85 +1,74 @@
 const { errorEmbed, successEmbed } = require('../../utils/embeds');
 const { resolveMember } = require('../../utils/helpers');
+const { getPermTier, tierRank } = require('../../utils/permissions');
 const UserData = require('../../models/UserData');
+const GuildConfig = require('../../models/GuildConfig');
 const { EmbedBuilder } = require('discord.js');
 
-function isBotOwner(userId) {
-  return (process.env.OWNER_IDS || '').split(',').map(s => s.trim()).includes(userId);
+function isBotOwner(id) {
+  return (process.env.OWNER_IDS || '').split(',').map(s => s.trim()).includes(id);
 }
 
-// .innercircle — add user to inner circle (bot owner only)
+// .innercircle — GIVE: bot owner only
 const innercircle = {
-  name: 'innercircle',
-  category: 'owner',
-  description: 'Grant a user full inner circle access (bot owner only)',
-  usage: '.innercircle <@user>',
-  example: '.innercircle @John',
-
+  name: 'innercircle', category: 'owner',
+  description: 'Grant inner circle access (bot owner only)',
+  usage: '.innercircle @user', example: '.innercircle @John',
   async execute(message, args, client, config) {
     if (!isBotOwner(message.author.id))
-      return message.reply({ embeds: [errorEmbed('Only the **bot owner** can manage the inner circle.')] });
-
+      return message.reply({ embeds: [errorEmbed('Only the **bot owner** can grant inner circle.')] });
     const target = await resolveMember(message.guild, args[0]);
     if (!target) return message.reply({ embeds: [errorEmbed('Member not found.')] });
-
-    await UserData.findOneAndUpdate(
-      { guildId: message.guild.id, userId: target.id },
-      { isInnerCircle: true },
-      { upsert: true }
-    );
-
-    return message.reply({ embeds: [successEmbed(`${target} has been added to the **inner circle**. They have full bot control.`)] });
+    await UserData.findOneAndUpdate({ guildId: message.guild.id, userId: target.id }, { isInnerCircle: true }, { upsert: true });
+    return message.reply({ embeds: [successEmbed(`${target} added to the **inner circle**.`)] });
   },
 };
 
-// .innercirclelist — show all inner circle members
+// .innercirclelist — inner circle AND above can view
 const innercirclelist = {
-  name: 'innercirclelist',
-  category: 'owner',
-  description: 'Show all inner circle members',
-  usage: '.innercirclelist',
-  example: '.innercirclelist',
-
+  name: 'innercirclelist', category: 'owner',
+  description: 'Show all inner circle members (inner circle+ can view)',
+  usage: '.innercirclelist', example: '.innercirclelist',
   async execute(message, args, client, config) {
-    if (!isBotOwner(message.author.id))
-      return message.reply({ embeds: [errorEmbed('Only the **bot owner** can view the inner circle.')] });
-
+    const ud = await UserData.findOne({ guildId: message.guild.id, userId: message.author.id }).lean();
+    const tier = await getPermTier(message.member, config);
+    const canView = isBotOwner(message.author.id) || tier === 'close' || ud?.isInnerCircle;
+    if (!canView)
+      return message.reply({ embeds: [errorEmbed('Only **inner circle** or higher can view this.')] });
     const list = await UserData.find({ guildId: message.guild.id, isInnerCircle: true });
     if (!list.length)
       return message.reply({ embeds: [new EmbedBuilder().setColor(0x2B2D31).setDescription('No inner circle members.')] });
-
-    const lines = list.map((u, i) => `\`${i + 1}.\` <@${u.userId}> (${u.userId})`);
+    const lines = list.map((u, i) => {
+      const isClose = (config.closeWhitelist || []).includes(u.userId);
+      return `\`${i + 1}.\` <@${u.userId}> (${u.userId})${isClose ? ' 🔒 *close*' : ''}`;
+    });
     return message.reply({
       embeds: [new EmbedBuilder()
         .setColor(0xFEE75C)
         .setTitle(`👑 Inner Circle — ${list.length} members`)
-        .setDescription(lines.join('\n'))]
+        .setDescription(lines.join('\n'))
+        .setFooter({ text: '🔒 = also in close whitelist' })]
     });
   },
 };
 
-// Remove from inner circle
+// .removeinnercircle — REMOVE: better(✗), close, bot owner
 const removeinnercircle = {
-  name: 'removeinnercircle',
-  aliases: ['ric'],
-  category: 'owner',
-  description: 'Remove a user from the inner circle',
-  usage: '.removeinnercircle <@user>',
-  example: '.removeinnercircle @John',
-
+  name: 'removeinnercircle', aliases: ['ric'], category: 'owner',
+  description: 'Remove a user from inner circle (✗/close/bot owner only)',
+  usage: '.removeinnercircle @user', example: '.removeinnercircle @John',
   async execute(message, args, client, config) {
-    if (!isBotOwner(message.author.id))
-      return message.reply({ embeds: [errorEmbed('Only the **bot owner** can manage the inner circle.')] });
-
+    const tier = await getPermTier(message.member, config);
+    const hasBetterRole = config.betterRoleId && message.member.roles.cache.has(config.betterRoleId);
+    const canRemove = isBotOwner(message.author.id) || tier === 'close' || hasBetterRole;
+    if (!canRemove)
+      return message.reply({ embeds: [errorEmbed('You need **✗ role**, **close**, or **bot owner** to remove inner circle.')] });
     const target = await resolveMember(message.guild, args[0]);
     if (!target) return message.reply({ embeds: [errorEmbed('Member not found.')] });
-
-    await UserData.findOneAndUpdate(
-      { guildId: message.guild.id, userId: target.id },
-      { isInnerCircle: false }
-    );
-
-    return message.reply({ embeds: [successEmbed(`${target} removed from the **inner circle**.`)] });
+    if ((config.closeWhitelist || []).includes(target.id) && tier !== 'close' && !isBotOwner(message.author.id))
+      return message.reply({ embeds: [errorEmbed('You cannot remove a **close** member from inner circle.')] });
+    await UserData.findOneAndUpdate({ guildId: message.guild.id, userId: target.id }, { isInnerCircle: false });
+    return message.reply({ embeds: [successEmbed(`${target} removed from **inner circle**.`)] });
   },
 };
 
