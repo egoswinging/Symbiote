@@ -398,4 +398,141 @@ const deletesave = {
   },
 };
 
-module.exports = [saveserver, serverload, ts, deletesave];
+
+// ── .updateserver <n> ─────────────────────────────────────────────────────
+// Re-saves the current server state into an existing named backup
+// Keeps the same name but overwrites roles/channels/permissions with current state
+const updateserver = {
+  name: 'updateserver',
+  category: 'utility',
+  description: 'Update an existing saved layout with the current server state (bot owner only)',
+  usage: '.updateserver <n>',
+  example: '.updateserver UBH',
+
+  async execute(message, args, client, config) {
+    if (!isBotOwner(message.author.id))
+      return message.reply({ embeds: [errorEmbed('Only the **bot owner** can update server layouts.')] });
+
+    const name = args.join(' ').trim();
+    if (!name)
+      return message.reply({ embeds: [errorEmbed('Provide the backup name to update.\n**Usage:** `.updateserver <n>`\n**Example:** `.updateserver UBH`')] });
+
+    // Check the backup exists first
+    const existing = await Backup.collection.findOne({ ownerId: message.author.id, name });
+    if (!existing)
+      return message.reply({ embeds: [errorEmbed(`No backup named **${name}** found. Use \`.saveserver ${name}\` to create it first.`)] });
+
+    const status = await message.reply({
+      embeds: [{ color: 0x5865F2, description: `⏳ Updating **${name}** with current server state...` }]
+    });
+
+    try {
+      const guild = message.guild;
+      await guild.channels.fetch().catch(() => {});
+      await guild.roles.fetch().catch(() => {});
+      await guild.members.fetch().catch(() => {});
+
+      // ── Roles ─────────────────────────────────────────────────────────────
+      const roles = [];
+      for (const [, r] of guild.roles.cache) {
+        try {
+          if (!r || r.id === guild.id) continue;
+          roles.push({
+            id:          String(r.id),
+            name:        String(r.name),
+            color:       safeNum(r.color),
+            hoist:       safeBool(r.hoist),
+            position:    safeNum(r.position),
+            permissions: String(r.permissions?.bitfield ?? '0'),
+            mentionable: safeBool(r.mentionable),
+            managed:     safeBool(r.managed),
+          });
+        } catch {}
+      }
+      roles.sort((a, b) => b.position - a.position);
+
+      // ── Bots ─────────────────────────────────────────────────────────────
+      const bots = [];
+      for (const [, m] of guild.members.cache) {
+        if (!m.user.bot) continue;
+        bots.push({ id: m.user.id, username: m.user.username, tag: m.user.tag });
+      }
+
+      // ── Channels ─────────────────────────────────────────────────────────
+      const channels = [];
+      const allCh = [...guild.channels.cache.values()].filter(c => c && SAVEABLE.has(c.type));
+
+      const cats = allCh.filter(c => c.type === ChannelType.GuildCategory)
+        .sort((a, b) => safeNum(a.position) - safeNum(b.position));
+      for (const cat of cats) {
+        try {
+          channels.push({
+            name: String(cat.name), type: safeNum(cat.type),
+            position: safeNum(cat.position), parentName: null,
+            topic: null, nsfw: false, rateLimitPerUser: 0,
+            bitrate: null, userLimit: null,
+            permissionOverwrites: getOverwrites(cat, guild),
+          });
+        } catch {}
+      }
+
+      const others = allCh.filter(c => c.type !== ChannelType.GuildCategory)
+        .sort((a, b) => safeNum(a.position) - safeNum(b.position));
+      for (const ch of others) {
+        try {
+          channels.push({
+            name: String(ch.name), type: safeNum(ch.type),
+            position: safeNum(ch.position),
+            parentName: safeStr(ch.parent?.name),
+            topic: safeStr(ch.topic), nsfw: safeBool(ch.nsfw),
+            rateLimitPerUser: safeNum(ch.rateLimitPerUser),
+            bitrate: ch.bitrate ? safeNum(ch.bitrate) : null,
+            userLimit: ch.userLimit ? safeNum(ch.userLimit) : null,
+            permissionOverwrites: getOverwrites(ch, guild),
+          });
+        } catch {}
+      }
+
+      // ── Overwrite existing backup, preserve original savedAt ───────────────
+      await Backup.collection.findOneAndUpdate(
+        { ownerId: message.author.id, name },
+        {
+          $set: {
+            guildName:  String(guild.name),
+            guildId:    String(guild.id),
+            updatedAt:  new Date(),
+            roles,
+            channels,
+            bots,
+          }
+        }
+      );
+
+      console.log(`[updateserver] Updated "${name}": ${roles.length} roles, ${channels.length} channels`);
+
+      // Show what changed vs original
+      const prevRoles = Array.isArray(existing.roles) ? existing.roles.length : 0;
+      const prevChs   = Array.isArray(existing.channels) ? existing.channels.length : 0;
+      const roleDiff  = roles.length - prevRoles;
+      const chDiff    = channels.length - prevChs;
+
+      const diffText = (n) => n === 0 ? 'no change' : n > 0 ? `+${n}` : `${n}`;
+
+      return status.edit({
+        embeds: [successEmbed(
+          `✅ **${name}** updated with current server state!\n\n` +
+          `🎭 **${roles.length}** roles *(${diffText(roleDiff)})*\n` +
+          `📁 **${channels.length}** channels *(${diffText(chDiff)})*\n` +
+          `🤖 **${bots.length}** bots\n\n` +
+          `All permissions and channel settings have been refreshed.`
+        )]
+      });
+
+    } catch (err) {
+      console.error('[updateserver] ERROR:', err.message);
+      return status.edit({ embeds: [errorEmbed(`Update failed: ${err.message}`)] });
+    }
+  },
+};
+
+module.exports = [saveserver, serverload, ts, deletesave, updateserver];

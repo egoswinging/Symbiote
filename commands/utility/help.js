@@ -77,6 +77,7 @@ const COMMAND_DATA = {
     { name: 'serverload',   desc: 'Wipe server and restore a saved layout',                         example: '.serverload UBH' },
     { name: 'ts',           desc: 'Show all your saved server layouts',                             example: '.ts' },
     { name: 'deletesave',   desc: 'Delete a saved server layout by name',                           example: '.deletesave UBH' },
+    { name: 'updateserver', desc: 'Update an existing template with current server state',               example: '.updateserver UBH' },
     { name: 'dm',            desc: 'DM every member in the server your exact message',          example: '.dm Yo join the #host.' },
     { name: 's',             desc: 'Snipe the last deleted message in this channel',            example: '.s' },
     { name: 'cs',            desc: 'Clear the sniped message for this channel',                 example: '.cs' },
