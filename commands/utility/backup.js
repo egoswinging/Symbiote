@@ -22,10 +22,13 @@ function getOverwrites(ch, guild) {
       try {
         if (ow.type !== 0) continue;
         const role = guild.roles.cache.get(id);
-        if (!role) continue;
+        // Include @everyone (role.id === guild.id) AND all other roles
+        const name = role ? (role.id === guild.id ? '@everyone' : role.name) : null;
+        if (!name) continue;
         result.push({
-          roleId: String(role.id),
-          name:   String(role.name),
+          roleId:    String(id),
+          name,
+          isEveryone: role.id === guild.id,
           allow:  String(ow.allow?.bitfield ?? '0'),
           deny:   String(ow.deny?.bitfield  ?? '0'),
         });
