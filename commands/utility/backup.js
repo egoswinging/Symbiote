@@ -1,6 +1,6 @@
 const { errorEmbed, successEmbed } = require('../../utils/embeds');
 const Backup = require('../../models/Backup');
-const { EmbedBuilder, ChannelType } = require('discord.js');
+const { EmbedBuilder, ChannelType, OverwriteType } = require('discord.js');
 
 function isBotOwner(id) {
   return (process.env.OWNER_IDS || '').split(',').map(s => s.trim()).includes(id);
@@ -20,15 +20,22 @@ function getOverwrites(ch, guild) {
     if (!ch?.permissionOverwrites?.cache) return result;
     for (const [id, ow] of ch.permissionOverwrites.cache) {
       try {
-        if (ow.type !== 0) continue;
-        const role = guild.roles.cache.get(id);
-        // Include @everyone (role.id === guild.id) AND all other roles
-        const name = role ? (role.id === guild.id ? '@everyone' : role.name) : null;
-        if (!name) continue;
+        const type = safeNum(ow.type);
+        const isRole = type === OverwriteType.Role || type === 0;
+        const isMember = type === OverwriteType.Member || type === 1;
+        if (!isRole && !isMember) continue;
+
+        const role = isRole ? guild.roles.cache.get(id) : null;
+        const member = isMember ? guild.members.cache.get(id) : null;
+        const isEveryone = isRole && id === guild.id;
+        const name = isEveryone ? '@everyone' : role?.name || member?.user?.tag || null;
+        if (!name && !isMember) continue;
+
         result.push({
           roleId:    String(id),
           name,
-          isEveryone: role.id === guild.id,
+          type,
+          isEveryone,
           allow:  String(ow.allow?.bitfield ?? '0'),
           deny:   String(ow.deny?.bitfield  ?? '0'),
         });
@@ -178,6 +185,7 @@ const serverload = {
     try {
       await guild.channels.fetch().catch(() => {});
       await guild.roles.fetch().catch(() => {});
+      await guild.members.fetch().catch(() => {});
 
       // Phase 1: Delete channels
       console.log('[load] Phase 1: Delete channels');
@@ -270,10 +278,22 @@ const serverload = {
       function buildOws(savedOws) {
         if (!Array.isArray(savedOws)) return [];
         return savedOws.map(ow => {
-          const newId = (ow.roleId && roleMapById[ow.roleId]) || roleMapByName[ow.name];
+          const type = safeNum(ow.type);
+          const isEveryone = ow.isEveryone || ow.name === '@everyone' || ow.roleId === raw.guildId;
+          const isMember = type === OverwriteType.Member || type === 1;
+          const newId = isEveryone
+            ? guild.id
+            : isMember
+              ? (guild.members.cache.has(ow.roleId) ? ow.roleId : null)
+              : (ow.roleId && roleMapById[ow.roleId]) || roleMapByName[ow.name];
           if (!newId) return null;
           try {
-            return { id: newId, type: 0, allow: BigInt(ow.allow || '0'), deny: BigInt(ow.deny || '0') };
+            return {
+              id: newId,
+              type: isMember ? OverwriteType.Member : OverwriteType.Role,
+              allow: BigInt(ow.allow || '0'),
+              deny: BigInt(ow.deny || '0'),
+            };
           } catch { return null; }
         }).filter(Boolean);
       }
