@@ -2,6 +2,7 @@ const { Events, EmbedBuilder, AuditLogEvent } = require('discord.js');
 const { sendDeleteEditLog } = require('../utils/logger');
 
 const BOT_DELETED = new Set();
+const MAX_SNIPES_PER_CHANNEL = 10;
 
 function markBotDeleted(messageId) {
   BOT_DELETED.add(messageId);
@@ -16,13 +17,18 @@ module.exports = {
 
     // Store snipe
     if (message.author) {
-      client.snipes.set(message.channel.id, {
+      const ownerIds = (process.env.OWNER_IDS || '').split(',').map(id => id.trim()).filter(Boolean);
+      if (!ownerIds.includes(message.author.id)) {
+        const channelSnipes = client.snipes.get(message.channel.id) || [];
+        channelSnipes.unshift({
         content:   message.content || '*[No text content]*',
         author:    message.author?.tag || 'Unknown',
         authorId:  message.author?.id,
         avatar:    message.author?.displayAvatarURL({ dynamic: true }),
         timestamp: new Date(),
-      });
+        });
+        client.snipes.set(message.channel.id, channelSnipes.slice(0, MAX_SNIPES_PER_CHANNEL));
+      }
     }
 
     // Skip if bot deleted it (clean, shush, .c, automod)

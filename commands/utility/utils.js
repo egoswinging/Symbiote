@@ -13,18 +13,23 @@ const s = {
   name: 's',
   aliases: ['snipe'],
   category: 'utility',
-  description: 'Snipe the last deleted message',
-  usage: '.s',
-  example: '.s',
+  description: 'Snipe a recently deleted message',
+  usage: '.s [number]',
+  example: '.s\n.s 2',
   async execute(message, args, client, config) {
-    const snipe = client.snipes.get(message.channel.id);
+    const index = args[0] ? parseInt(args[0], 10) : 1;
+    if (isNaN(index) || index < 1)
+      return message.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('Use a valid snipe number, like `.s 2`.')] });
+
+    const snipes = client.snipes.get(message.channel.id) || [];
+    const snipe = snipes[index - 1];
     if (!snipe)
-      return message.reply({ embeds: [new EmbedBuilder().setColor(0x2B2D31).setDescription('No sniped message.')] });
+      return message.reply({ embeds: [new EmbedBuilder().setColor(0x2B2D31).setDescription(index === 1 ? 'No sniped message.' : `No snipe found at #${index}.`)] });
     const embed = new EmbedBuilder()
       .setColor(0x5865F2)
       .setAuthor({ name: snipe.author, iconURL: snipe.avatar })
       .setDescription(snipe.content.slice(0, 2000))
-      .setFooter({ text: `Deleted ${new Date(snipe.timestamp).toLocaleTimeString()}` });
+      .setFooter({ text: `Snipe ${index}/${snipes.length} - Deleted ${new Date(snipe.timestamp).toLocaleTimeString()}` });
     return message.reply({ embeds: [embed] });
   },
 };

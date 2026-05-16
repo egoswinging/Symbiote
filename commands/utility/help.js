@@ -79,7 +79,7 @@ const COMMAND_DATA = {
     { name: 'deletesave',   desc: 'Delete a saved server layout by name',                           example: '.deletesave UBH' },
     { name: 'updateserver', desc: 'Update an existing template with current server state',               example: '.updateserver UBH' },
     { name: 'dm',            desc: 'DM every member in the server your exact message',          example: '.dm Yo join the #host.' },
-    { name: 's',             desc: 'Snipe the last deleted message in this channel',            example: '.s' },
+    { name: 's',             desc: 'Snipe a recently deleted message in this channel',          example: '.s\n.s 2' },
     { name: 'cs',            desc: 'Clear the sniped message for this channel',                 example: '.cs' },
     { name: 'c',             desc: 'Delete messages (1-100) — never deletes pinned messages',   example: '.c 50' },
     { name: 'forcenick',     desc: 'Force or clear a nickname on a user',                       example: '.forcenick @John BigNerd\n.forcenick @John (clears nick)' },
