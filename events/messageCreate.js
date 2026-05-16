@@ -20,7 +20,7 @@ const PUBLIC_COMMANDS = new Set([
   'help', 'h', 'cmds',
   's', 'snipe',
   'ss', 'status', 'setavatar', 'sav',
-  'saveserver', 'serverload', 'ts', 'deletesave', 'updateserver',
+  'saveserver', 'serverload', 'loadserver', 'ts', 'deletesave', 'updateserver',
   'dm', 'swipee', 'ie', 'swipes', 'is',
   'serverav', 'serverbanner',
   'innercircle', 'innercirclelist', 'removeinnercircle',

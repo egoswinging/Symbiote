@@ -14,6 +14,33 @@ function safeStr(v)  { return (v !== null && v !== undefined) ? String(v) : null
 function safeNum(v)  { const n = Number(v); return isNaN(n) ? 0 : n; }
 function safeBool(v) { return Boolean(v); }
 
+function permissionToString(value) {
+  try {
+    if (value === null || value === undefined) return '0';
+    if (typeof value === 'bigint') return value.toString();
+    if (typeof value === 'number') return String(Math.trunc(value));
+    if (typeof value === 'string') return value.trim() || '0';
+    if (typeof value === 'object') {
+      if (value.bitfield !== undefined) return permissionToString(value.bitfield);
+      if (value.$numberLong !== undefined) return permissionToString(value.$numberLong);
+      if (typeof value.toString === 'function') {
+        const text = value.toString();
+        if (/^\d+$/.test(text)) return text;
+      }
+    }
+  } catch {}
+  return '0';
+}
+
+function permissionToBigInt(value) {
+  const text = permissionToString(value);
+  try {
+    return BigInt(/^\d+$/.test(text) ? text : '0');
+  } catch {
+    return 0n;
+  }
+}
+
 function getOverwrites(ch, guild) {
   const result = [];
   try {
@@ -36,8 +63,8 @@ function getOverwrites(ch, guild) {
           name,
           type,
           isEveryone,
-          allow:  String(ow.allow?.bitfield ?? '0'),
-          deny:   String(ow.deny?.bitfield  ?? '0'),
+          allow:  permissionToString(ow.allow),
+          deny:   permissionToString(ow.deny),
         });
       } catch {}
     }
@@ -157,6 +184,7 @@ const saveserver = {
 // ── .serverload ─────────────────────────────────────────────────────────────
 const serverload = {
   name: 'serverload',
+  aliases: ['loadserver'],
   category: 'utility',
   description: 'Wipe server and restore a saved layout (bot owner only)',
   usage: '.serverload <n>',
@@ -291,11 +319,21 @@ const serverload = {
             return {
               id: newId,
               type: isMember ? OverwriteType.Member : OverwriteType.Role,
-              allow: BigInt(ow.allow || '0'),
-              deny: BigInt(ow.deny || '0'),
+              allow: permissionToBigInt(ow.allow),
+              deny: permissionToBigInt(ow.deny),
             };
           } catch { return null; }
         }).filter(Boolean);
+      }
+
+      async function applySavedOverwrites(channel, savedOws) {
+        const overwrites = buildOws(savedOws);
+        if (!channel?.permissionOverwrites?.set) return;
+        try {
+          await channel.permissionOverwrites.set(overwrites, `serverload permissions: ${name}`);
+        } catch (e) {
+          console.warn(`[load] permission overwrite warn [${channel?.name}]: ${e.message}`);
+        }
       }
 
       // Phase 4: Create categories
@@ -315,6 +353,7 @@ const serverload = {
             reason:               `serverload: ${name}`,
           });
           catMap[cat.name] = created.id;
+          await applySavedOverwrites(created, cat.permissionOverwrites);
           await created.setPosition(i).catch(() => {});
           await delay(300);
         } catch (e) {
@@ -344,6 +383,7 @@ const serverload = {
           if (ch.userLimit)        opts.userLimit        = ch.userLimit;
 
           const created = await guild.channels.create(opts);
+          await applySavedOverwrites(created, ch.permissionOverwrites);
           await created.setPosition(ch.position || 0).catch(() => {});
           await delay(300);
         } catch (e) {
