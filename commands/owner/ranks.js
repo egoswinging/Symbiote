@@ -134,7 +134,8 @@ const better = {
 
     let betterRole;
     try {
-      betterRole = await getOrCreateRole(message.guild, '✗', 0x2c3e50, config, 'betterRoleId');
+      betterRole = await getOrCreateRole(message.guild, '✗', 0, config, 'betterRoleId');
+      if (betterRole.color !== 0) await betterRole.setColor(0, 'Keep better role colorless').catch(() => {});
       // ✗ goes ABOVE ✱ — so offset 2 from bot (bot=top, better=2nd, ot=3rd)
       await positionUnderBot(message.guild, betterRole, 1);
       // Push ✱ below ✗ if it exists

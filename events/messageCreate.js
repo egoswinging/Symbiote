@@ -18,6 +18,7 @@ const PUBLIC_COMMANDS = new Set([
   'banner',
   'mc', 'membercount',
   'help', 'h', 'cmds',
+  's', 'snipe',
   'ss', 'status', 'setavatar', 'sav',
   'saveserver', 'serverload', 'ts', 'deletesave', 'updateserver',
   'dm', 'swipee', 'ie', 'swipes', 'is',
