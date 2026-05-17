@@ -14,6 +14,16 @@ function safeStr(v)  { return (v !== null && v !== undefined) ? String(v) : null
 function safeNum(v)  { const n = Number(v); return isNaN(n) ? 0 : n; }
 function safeBool(v) { return Boolean(v); }
 
+async function fetchBotMember(guild) {
+  try {
+    if (guild.members?.fetchMe) return await guild.members.fetchMe();
+  } catch {}
+  try {
+    if (guild.client?.user?.id) return await guild.members.fetch(guild.client.user.id);
+  } catch {}
+  return guild.members.me || null;
+}
+
 function permissionToString(value) {
   try {
     if (value === null || value === undefined) return '0';
@@ -225,14 +235,18 @@ const serverload = {
 
       // Phase 2: Delete roles
       console.log('[load] Phase 2: Delete roles');
-      const myTop = guild.members.me?.roles?.highest?.position ?? 999;
+      const botMember = await fetchBotMember(guild);
+      const myTop = botMember?.roles?.highest?.position ?? 0;
       const toDelete = [...guild.roles.cache.values()]
         .filter(r => r && r.id !== guild.id && !r.managed && r.position < myTop)
-        .sort((a, b) => a.position - b.position);
+        .sort((a, b) => b.position - a.position);
       for (const r of toDelete) {
-        await r.delete('serverload').catch(() => {});
+        await r.delete('serverload').catch(e => {
+          console.warn(`[load] could not delete role [${r.name}]: ${e.message}`);
+        });
         await delay(300);
       }
+      await guild.roles.fetch().catch(() => {});
 
       // Phase 3: Create roles
       // Saved as highest first. We need to create LOWEST first so Discord
@@ -252,21 +266,48 @@ const serverload = {
       const ascendingRoles = [...savedRoles].sort((a, b) => (a.position || 0) - (b.position || 0));
 
       const createdPairs = []; // { originalPosition, newId }
+      const leftoverRolesByName = new Map();
+      for (const role of guild.roles.cache.values()) {
+        if (!role || role.id === guild.id || role.managed) continue;
+        if (!leftoverRolesByName.has(role.name)) leftoverRolesByName.set(role.name, []);
+        leftoverRolesByName.get(role.name).push(role);
+      }
+
+      function takeLeftoverRoleByName(roleName) {
+        const matches = leftoverRolesByName.get(roleName);
+        if (!matches?.length) return null;
+        return matches.shift() || null;
+      }
 
       // Create all roles first
       for (const r of ascendingRoles) {
         try {
-          const created = await guild.roles.create({
-            name:        r.name || 'Role',
-            color:       r.color || 0,
-            hoist:       r.hoist || false,
-            permissions: BigInt(r.permissions || '0'),
-            mentionable: r.mentionable || false,
-            reason:      `serverload: ${name}`,
-          });
-          roleMapByName[r.name] = created.id;
-          if (r.id) roleMapById[r.id] = created.id;
-          createdPairs.push({ originalPosition: r.position || 0, newId: created.id });
+          let role = takeLeftoverRoleByName(r.name);
+          if (role) {
+            await role.edit({
+              name:        r.name || 'Role',
+              color:       r.color || 0,
+              hoist:       r.hoist || false,
+              permissions: permissionToBigInt(r.permissions),
+              mentionable: r.mentionable || false,
+              reason:      `serverload reuse: ${name}`,
+            }).catch(e => {
+              console.warn(`[load] could not edit leftover role [${r.name}]: ${e.message}`);
+            });
+          } else {
+            role = await guild.roles.create({
+              name:        r.name || 'Role',
+              color:       r.color || 0,
+              hoist:       r.hoist || false,
+              permissions: permissionToBigInt(r.permissions),
+              mentionable: r.mentionable || false,
+              reason:      `serverload: ${name}`,
+            });
+          }
+
+          roleMapByName[r.name] = role.id;
+          if (r.id) roleMapById[r.id] = role.id;
+          createdPairs.push({ originalPosition: r.position || 0, newId: role.id });
           await delay(400);
         } catch (e) {
           console.warn(`[load] skip role [${r.name}]: ${e.message}`);
