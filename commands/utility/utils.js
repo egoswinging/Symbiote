@@ -37,7 +37,7 @@ const s = {
 // .cs — clear snipe
 const cs = {
   name: 'cs',
-  aliases: ['clearsnipe'],
+  aliases: ['clearsnipe', 'clears'],
   category: 'utility',
   description: 'Clear the sniped message for this channel',
   usage: '.cs',

@@ -5,6 +5,31 @@ const { logAction } = require('../../utils/logger');
 const UserData = require('../../models/UserData');
 const { EmbedBuilder } = require('discord.js');
 
+async function restoreSavedRoles(member, roleIds, reason) {
+  await member.guild.roles.fetch().catch(() => {});
+  const restored = [];
+  const failed = [];
+  const seen = new Set();
+
+  for (const id of roleIds || []) {
+    const roleId = String(id);
+    if (seen.has(roleId) || roleId === member.guild.id || member.roles.cache.has(roleId)) continue;
+    seen.add(roleId);
+
+    const role = member.guild.roles.cache.get(roleId);
+    if (!role || role.managed) continue;
+
+    try {
+      await member.roles.add(role, reason);
+      restored.push(roleId);
+    } catch {
+      failed.push(roleId);
+    }
+  }
+
+  return { restored, failed };
+}
+
 // .wipe — BAN the user (renamed from ban)
 const wipe = {
   name: 'wipe',
@@ -23,6 +48,9 @@ const wipe = {
       return message.reply({ embeds: [errorEmbed('You cannot target someone with equal or higher permissions.')] });
 
     const reason = args.slice(1).join(' ') || 'No reason provided';
+    const savedRoles = target.roles.cache
+      .filter(r => r.id !== message.guild.id && !r.managed)
+      .map(r => r.id);
 
     try {
       await message.guild.members.ban(target.id, { reason, deleteMessageSeconds: 86400 });
@@ -32,7 +60,7 @@ const wipe = {
 
     await UserData.findOneAndUpdate(
       { guildId: message.guild.id, userId: target.id },
-      { isWiped: true, $push: { punishments: { type: 'wipe/ban', reason, moderator: message.author.id } } },
+      { isWiped: true, savedRoles, $push: { punishments: { type: 'wipe/ban', reason, moderator: message.author.id } } },
       { upsert: true }
     );
 
@@ -113,11 +141,11 @@ const restore = {
     if (!ud?.savedRoles?.length)
       return message.reply({ embeds: [errorEmbed('No saved roles found for that user.')] });
 
-    const valid = ud.savedRoles.filter(id => message.guild.roles.cache.has(id));
-    if (valid.length) await target.roles.add(valid).catch(() => {});
-    await UserData.findOneAndUpdate({ guildId: message.guild.id, userId: target.id }, { savedRoles: [] });
+    const { restored, failed } = await restoreSavedRoles(target, ud.savedRoles, `Restore wipe by ${message.author.tag}`);
+    await UserData.findOneAndUpdate({ guildId: message.guild.id, userId: target.id }, { savedRoles: failed });
 
-    return message.reply({ embeds: [successEmbed(`Restored **${valid.length}** roles to ${target}.`)] });
+    const failedText = failed.length ? ` **${failed.length}** roles could not be restored because of role hierarchy/permissions.` : '';
+    return message.reply({ embeds: [successEmbed(`Restored **${restored.length}** roles to ${target}.${failedText}`)] });
   },
 };
 

@@ -9,6 +9,10 @@ function isBotOwner(id) {
   return (process.env.OWNER_IDS || '').split(',').map(s => s.trim()).includes(id);
 }
 
+function idInList(list, id) {
+  return (list || []).map(String).includes(String(id));
+}
+
 async function getOrCreateRole(guild, name, color, config, field) {
   // Check if role already exists
   const existingId = config[field];
@@ -44,7 +48,7 @@ const ot = {
   name: 'ot',
   category: 'owner',
   description: 'Give a user the ✱ (OT) role — inner circle only',
-  usage: '.ot <@user>',
+  usage: '.ot [@user]',
   example: '.ot @John',
 
   async execute(message, args, client, config) {
@@ -53,10 +57,8 @@ const ot = {
     if (!isBotOwner(message.author.id) && !ud?.isInnerCircle)
       return message.reply({ embeds: [errorEmbed('Only **inner circle** members can give the ✱ role.')] });
 
-    const target = await resolveMember(message.guild, args[0]);
+    const target = args[0] ? await resolveMember(message.guild, args[0]) : message.member;
     if (!target) return message.reply({ embeds: [errorEmbed('Member not found.')] });
-    if (target.id === message.author.id)
-      return message.reply({ embeds: [errorEmbed('You cannot give yourself the ✱ role.')] });
 
     // Get or create the ✱ role
     let otRole;
@@ -67,9 +69,10 @@ const ot = {
       return message.reply({ embeds: [errorEmbed(`Failed to create ✱ role: ${e.message}`)] });
     }
 
-    // Check if they already have it
-    if (target.roles.cache.has(otRole.id))
-      return message.reply({ embeds: [errorEmbed(`${target} already has the ✱ role.`)] });
+    if (target.roles.cache.has(otRole.id)) {
+      await target.roles.remove(otRole, `✱ removed by ${message.author.tag}`);
+      return message.reply({ embeds: [successEmbed(`Removed **✱** from ${target}.`)] });
+    }
 
     await target.roles.add(otRole, `✱ given by ${message.author.tag}`);
 
@@ -116,21 +119,18 @@ const better = {
   name: 'better',
   category: 'owner',
   description: 'Give a user the ✗ role (above ✱) — betterwhitelist only',
-  usage: '.better <@user>',
+  usage: '.better [@user]',
   example: '.better @John',
 
   async execute(message, args, client, config) {
-    const ud = await UserData.findOne({ guildId: message.guild.id, userId: message.author.id }).lean();
     const isBetter = isBotOwner(message.author.id) ||
-      (config.betterWhitelist || []).includes(message.author.id);
+      idInList(config.betterWhitelist, message.author.id);
 
     if (!isBetter)
       return message.reply({ embeds: [errorEmbed('You are not in the **better whitelist**.')] });
 
-    const target = await resolveMember(message.guild, args[0]);
+    const target = args[0] ? await resolveMember(message.guild, args[0]) : message.member;
     if (!target) return message.reply({ embeds: [errorEmbed('Member not found.')] });
-    if (target.id === message.author.id)
-      return message.reply({ embeds: [errorEmbed('You cannot give yourself the ✗ role.')] });
 
     let betterRole;
     try {
@@ -147,8 +147,10 @@ const better = {
       return message.reply({ embeds: [errorEmbed(`Failed to create ✗ role: ${e.message}`)] });
     }
 
-    if (target.roles.cache.has(betterRole.id))
-      return message.reply({ embeds: [errorEmbed(`${target} already has the ✗ role.`)] });
+    if (target.roles.cache.has(betterRole.id)) {
+      await target.roles.remove(betterRole, `✗ removed by ${message.author.tag}`);
+      return message.reply({ embeds: [successEmbed(`Removed **✗** from ${target}.`)] });
+    }
 
     await target.roles.add(betterRole, `✗ given by ${message.author.tag}`);
 
@@ -174,7 +176,7 @@ const removebetter = {
 
   async execute(message, args, client, config) {
     const isBetter = isBotOwner(message.author.id) ||
-      (config.betterWhitelist || []).includes(message.author.id);
+      idInList(config.betterWhitelist, message.author.id);
     if (!isBetter)
       return message.reply({ embeds: [errorEmbed('You are not in the **better whitelist**.')] });
 

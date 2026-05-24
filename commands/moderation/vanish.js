@@ -43,6 +43,31 @@ async function applyVanishOverwrites(guild, role, reason = 'Apply vanish permiss
   return { done, failed };
 }
 
+async function restoreSavedRoles(member, roleIds, reason) {
+  await member.guild.roles.fetch().catch(() => {});
+  const restored = [];
+  const failed = [];
+  const seen = new Set();
+
+  for (const id of roleIds || []) {
+    const roleId = String(id);
+    if (seen.has(roleId) || roleId === member.guild.id || member.roles.cache.has(roleId)) continue;
+    seen.add(roleId);
+
+    const role = member.guild.roles.cache.get(roleId);
+    if (!role || role.managed) continue;
+
+    try {
+      await member.roles.add(role, reason);
+      restored.push(roleId);
+    } catch {
+      failed.push(roleId);
+    }
+  }
+
+  return { restored, failed };
+}
+
 const vanish = {
   name: 'vanish',
   category: 'moderation',
@@ -134,20 +159,17 @@ const restorevanish = {
     if (!ud?.vanishedRoles?.length)
       return message.reply({ embeds: [errorEmbed('No saved vanish roles found for that user.')] });
 
-    const valid = ud.vanishedRoles.filter(id => {
-      const r = message.guild.roles.cache.get(id);
-      return r && !r.managed;
-    });
-
-    if (valid.length) await target.roles.add(valid).catch(() => {});
+    if (config.vanishRole) await target.roles.remove(config.vanishRole, `Restore vanish by ${message.author.tag}`).catch(() => {});
+    const { restored, failed } = await restoreSavedRoles(target, ud.vanishedRoles, `Restore vanish by ${message.author.tag}`);
 
     await UserData.findOneAndUpdate(
       { guildId: message.guild.id, userId: target.id },
-      { vanishedRoles: [] }
+      { isVanished: false, vanishedRoles: failed }
     );
 
-    await logAction(message.guild, { action: 'Restore Vanish Roles', moderator: message.author.id, target: target.id, reason: `Restored ${valid.length} roles`, color: 0x57F287 });
-    await silentReply(message, successEmbed(`Restored **${valid.length}** roles to ${target}.`));
+    await logAction(message.guild, { action: 'Restore Vanish Roles', moderator: message.author.id, target: target.id, reason: `Restored ${restored.length} roles`, color: 0x57F287 });
+    const failedText = failed.length ? ` **${failed.length}** roles could not be restored because of role hierarchy/permissions.` : '';
+    await silentReply(message, successEmbed(`Restored **${restored.length}** roles to ${target}.${failedText}`));
   },
 };
 

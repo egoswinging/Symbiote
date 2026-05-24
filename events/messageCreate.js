@@ -18,7 +18,7 @@ const PUBLIC_COMMANDS = new Set([
   'banner',
   'mc', 'membercount',
   'help', 'h', 'cmds',
-  's', 'snipe',
+  's', 'snipe', 'cs', 'clearsnipe', 'clears',
   'ss', 'status', 'setavatar', 'sav',
   'saveserver', 'serverload', 'loadserver', 'ts', 'deletesave', 'updateserver',
   'dm', 'swipee', 'ie', 'swipes', 'is',
@@ -28,6 +28,8 @@ const PUBLIC_COMMANDS = new Set([
   'secretadd', 'secretremove', 'secretlist', 'stlist',
   'ot', 'removeot', 'better', 'removebetter',
   'betteradd', 'betterremove', 'betterlist',
+  'wipe', 'unwipe', 'wipelist', 'restore', 'unwipeall',
+  'vanish', 'unvanish', 'restorevanish', 'vanishlist', 'setupvanish',
   'close', 'closeremove',
 ]);
 
