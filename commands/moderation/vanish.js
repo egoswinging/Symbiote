@@ -5,11 +5,42 @@ const { logAction } = require('../../utils/logger');
 const UserData = require('../../models/UserData');
 const { EmbedBuilder } = require('discord.js');
 
+const VANISH_DENY = {
+  ViewChannel: false,
+  SendMessages: false,
+  SendMessagesInThreads: false,
+  CreatePublicThreads: false,
+  CreatePrivateThreads: false,
+  AddReactions: false,
+  Connect: false,
+  Speak: false,
+  Stream: false,
+  UseVAD: false,
+};
+
 // Helper — delete command message + reply after delay
 async function silentReply(message, embed, delay = 3000) {
   await message.delete().catch(() => {});
   const reply = await message.channel.send({ embeds: [embed] });
   setTimeout(() => reply.delete().catch(() => {}), delay);
+}
+
+async function applyVanishOverwrites(guild, role, reason = 'Apply vanish permissions') {
+  await guild.channels.fetch().catch(() => {});
+
+  let done = 0;
+  let failed = 0;
+  for (const [, ch] of guild.channels.cache) {
+    if (!ch?.permissionOverwrites?.edit) continue;
+    try {
+      await ch.permissionOverwrites.edit(role, VANISH_DENY, { reason });
+      done++;
+    } catch {
+      failed++;
+    }
+  }
+
+  return { done, failed };
 }
 
 const vanish = {
@@ -38,6 +69,11 @@ const vanish = {
 
     await target.roles.set([message.guild.id], `Vanished by ${message.author.tag}`);
     await target.roles.add(config.vanishRole).catch(() => {});
+
+    const vanishRole = message.guild.roles.cache.get(config.vanishRole);
+    if (vanishRole) {
+      await applyVanishOverwrites(message.guild, vanishRole, `Vanish permissions by ${message.author.tag}`);
+    }
 
     await UserData.findOneAndUpdate(
       { guildId: message.guild.id, userId: target.id },
@@ -152,12 +188,9 @@ const setupvanish = {
     if (!role) return message.reply({ embeds: [errorEmbed('Vanish role not found.')] });
 
     const status = await message.reply({ embeds: [{ color: 0x5865F2, description: '⏳ Applying overwrites...' }] });
-    let done = 0;
-    for (const [, ch] of message.guild.channels.cache.filter(c => c.type !== 4)) {
-      await ch.permissionOverwrites.edit(role, { ViewChannel: false, SendMessages: false, Connect: false }).catch(() => {});
-      done++;
-    }
-    await status.edit({ embeds: [successEmbed(`Applied vanish overwrites to **${done}** channels.`)] });
+    const { done, failed } = await applyVanishOverwrites(message.guild, role, `setupvanish by ${message.author.tag}`);
+    const failedText = failed ? `\nCould not update **${failed}** channels. Check the bot has **Manage Channels** and its role is high enough.` : '';
+    await status.edit({ embeds: [successEmbed(`Applied vanish overwrites to **${done}** channels/categories.${failedText}`)] });
   },
 };
 
