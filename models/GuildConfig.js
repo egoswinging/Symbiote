@@ -25,6 +25,13 @@ const guildConfigSchema = new Schema({
       spam:          { type: Number, default: 5 },
     },
     timeoutDuration: { type: Number, default: 60 },
+    timeoutDurations: {
+      channelDelete: { type: Number, default: null },
+      roleDelete:    { type: Number, default: null },
+      ban:           { type: Number, default: null },
+      kick:          { type: Number, default: null },
+      spam:          { type: Number, default: null },
+    },
     punishment:      { type: String, enum: ['removeRoles', 'kick', 'ban', 'vanish', 'timeout'], default: 'removeRoles' },
     punishments: {
       channelDelete: { type: String, default: null },

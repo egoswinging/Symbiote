@@ -15,7 +15,7 @@ const COMMAND_DATA = {
     { name: 'resetrole',   desc: 'Reset a role config key',                                     example: '.resetrole vanish' },
     { name: 'showconfig',  desc: 'Show the full server bot config',                             example: '.showconfig' },
     { name: 'rolelist',    desc: 'View all roles in a specific tier',                           example: '.rolelist v1' },
-    { name: 'antinuke',    desc: 'Easy anti-nuke setup with per-trigger actions',                example: '.an set ban ban 3\n.an set kick ban 3\n.an config' },
+    { name: 'antinuke',    desc: 'Easy anti-nuke setup with per-trigger actions',                example: '.an set ban ban 3\n.an set spam timeout 5\n.an timeout spam 10m\n.an config' },
   ],
   moderation: [
     { name: 'wipe',          desc: 'Ban a user from the server',                                example: '.wipe @John rule breaking' },

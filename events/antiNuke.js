@@ -8,7 +8,11 @@ function getPunishment(config, trigger) {
   return config.antiNuke.punishments?.[trigger] || config.antiNuke.punishment || 'removeRoles';
 }
 
-async function punish(guild, userId, punishment, reason, config = null) {
+function getTimeoutMinutes(config, trigger) {
+  return config?.antiNuke?.timeoutDurations?.[trigger] || config?.antiNuke?.timeoutDuration || 60;
+}
+
+async function punish(guild, userId, punishment, reason, config = null, trigger = null) {
   if (!punishment || punishment === 'none') return;
   const member = await guild.members.fetch(userId).catch(() => null);
   if (!member) return;
@@ -22,7 +26,7 @@ async function punish(guild, userId, punishment, reason, config = null) {
   clearTracker(guild.id, userId);
 
   if (!config) config = await GuildConfig.findOne({ guildId: guild.id });
-  const timeoutMins = config?.antiNuke?.timeoutDuration || 60;
+  const timeoutMins = getTimeoutMinutes(config, trigger);
 
   try {
     switch (punishment) {
@@ -99,7 +103,7 @@ async function handleEvent(guild, auditLogEvent, trigger) {
 
   if (exceeded) {
     const punishment = getPunishment(config, trigger);
-    await punish(guild, executor.id, punishment, `${trigger} threshold exceeded (${threshold} in 10s)`, config);
+    await punish(guild, executor.id, punishment, `${trigger} threshold exceeded (${threshold} in 10s)`, config, trigger);
   }
 }
 
@@ -142,7 +146,7 @@ module.exports.guildMemberRemove = {
       const exceeded  = trackAction(member.guild.id, executor.id, 'kick', threshold);
       if (exceeded) {
         const punishment = getPunishment(config, 'kick');
-        await punish(member.guild, executor.id, punishment, `kick threshold exceeded`, config);
+        await punish(member.guild, executor.id, punishment, `kick threshold exceeded`, config, 'kick');
       }
     } catch {}
   },
@@ -165,7 +169,7 @@ module.exports.spamDetect = {
     const exceeded = trackAction(message.guild.id, message.author.id, 'spam', spamThreshold);
     if (exceeded) {
       const punishment = getPunishment(config, 'spam');
-      await punish(message.guild, message.author.id, punishment, `spam threshold exceeded`, config);
+      await punish(message.guild, message.author.id, punishment, `spam threshold exceeded`, config, 'spam');
     }
   },
 };

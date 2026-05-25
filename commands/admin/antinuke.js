@@ -76,8 +76,10 @@ function triggerRows(an) {
     const trigger = TRIGGERS[name];
     const punishment = an?.punishments?.[trigger.key] || an?.punishment || 'removeRoles';
     const limit = an?.thresholds?.[trigger.key] ?? trigger.defaultLimit;
+    const timeout = an?.timeoutDurations?.[trigger.key] || an?.timeoutDuration || 60;
     const label = PUNISHMENT_LABELS[punishment] || punishment;
-    return `**${trigger.label}** - ${trigger.desc}\n> Action: \`${label}\` | Limit: \`${limit}\` in 10s`;
+    const timeoutText = punishment === 'timeout' ? ` | Timeout: \`${formatMinutes(timeout)}\`` : '';
+    return `**${trigger.label}** - ${trigger.desc}\n> Action: \`${label}\` | Limit: \`${limit}\` in 10s${timeoutText}`;
   }).join('\n\n');
 }
 
@@ -94,6 +96,7 @@ function helpEmbed(an) {
       '`.an set <trigger> <action> [limit]`',
       '`.an limit <trigger> <limit>`',
       '`.an timeout <duration>`',
+      '`.an timeout <trigger> <duration>`',
       '`.an wl add @user` / `.an wl remove @user` / `.an wl list`',
       '',
       '**Triggers**',
@@ -107,6 +110,7 @@ function helpEmbed(an) {
       '`.an set kick ban 3`',
       '`.an set channeldelete ban 2`',
       '`.an set spam timeout 5`',
+      '`.an timeout spam 10m`',
     ].join('\n'));
 }
 
@@ -158,6 +162,7 @@ module.exports = {
       const trigger = normalizeTrigger(args[1]);
       const punishment = normalizePunishment(args[2]);
       const limit = parseLimit(args[3]);
+      const timeoutMinutes = parseDuration(args[4]);
 
       if (!trigger || !punishment) {
         return message.reply({ embeds: [errorEmbed('Use `.an set <trigger> <action> [limit]`.\nExample: `.an set kick ban 3`')] });
@@ -165,13 +170,18 @@ module.exports = {
       if (args[3] && !limit) {
         return message.reply({ embeds: [errorEmbed('Limit must be a number from 1 to 50.')] });
       }
+      if (args[4] && punishment === 'timeout' && !timeoutMinutes) {
+        return message.reply({ embeds: [errorEmbed('Timeout duration must look like `10m`, `2h`, or `7d`. Max is 28d.')] });
+      }
 
       const updates = { [`antiNuke.punishments.${trigger.key}`]: punishment };
       if (limit) updates[`antiNuke.thresholds.${trigger.key}`] = limit;
+      if (timeoutMinutes && punishment === 'timeout') updates[`antiNuke.timeoutDurations.${trigger.key}`] = timeoutMinutes;
       await GuildConfig.updateOne({ guildId: message.guild.id }, updates);
 
       const limitText = limit ? ` after **${limit}** actions in 10s` : '';
-      return message.reply({ embeds: [successEmbed(`**${trigger.label}** now uses **${PUNISHMENT_LABELS[punishment]}**${limitText}.`)] });
+      const timeoutText = timeoutMinutes && punishment === 'timeout' ? ` Timeout duration: **${formatMinutes(timeoutMinutes)}**.` : '';
+      return message.reply({ embeds: [successEmbed(`**${trigger.label}** now uses **${PUNISHMENT_LABELS[punishment]}**${limitText}.${timeoutText}`)] });
     }
 
     if (['limit', 'threshold'].includes(sub)) {
@@ -198,12 +208,17 @@ module.exports = {
     }
 
     if (sub === 'timeout') {
-      const minutes = parseDuration(args[1]);
+      const trigger = normalizeTrigger(args[1]);
+      const minutes = trigger ? parseDuration(args[2]) : parseDuration(args[1]);
       if (!minutes) {
-        return message.reply({ embeds: [errorEmbed('Use `.an timeout <duration>` like `.an timeout 30m`, `.an timeout 2h`, or `.an timeout 7d`. Max is 28d.')] });
+        return message.reply({ embeds: [errorEmbed('Use `.an timeout <duration>` for global timeout, or `.an timeout <trigger> <duration>` for one trigger.\nExamples: `.an timeout 1h`, `.an timeout spam 10m`, `.an timeout ban 7d`. Max is 28d.')] });
+      }
+      if (trigger) {
+        await GuildConfig.updateOne({ guildId: message.guild.id }, { [`antiNuke.timeoutDurations.${trigger.key}`]: minutes });
+        return message.reply({ embeds: [successEmbed(`**${trigger.label}** timeout action duration set to **${formatMinutes(minutes)}**.`)] });
       }
       await GuildConfig.updateOne({ guildId: message.guild.id }, { 'antiNuke.timeoutDuration': minutes });
-      return message.reply({ embeds: [successEmbed(`Anti-nuke timeout action duration set to **${formatMinutes(minutes)}**.`)] });
+      return message.reply({ embeds: [successEmbed(`Default anti-nuke timeout action duration set to **${formatMinutes(minutes)}**.`)] });
     }
 
     if (['wl', 'whitelist'].includes(sub)) {
