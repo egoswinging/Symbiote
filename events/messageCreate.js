@@ -30,6 +30,7 @@ const PUBLIC_COMMANDS = new Set([
   'betteradd', 'betterremove', 'betterlist',
   'wipe', 'unwipe', 'wipelist', 'restore', 'unwipeall',
   'vanish', 'unvanish', 'restorevanish', 'vanishlist', 'setupvanish',
+  'timeout', 'mute', 'to', 'untimeout', 'unmute', 'uto',
   'close', 'closeremove',
 ]);
 

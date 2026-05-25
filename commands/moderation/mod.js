@@ -97,6 +97,37 @@ const timeout = {
   },
 };
 
+// .untimeout / .unmute
+const untimeout = {
+  name: 'untimeout',
+  aliases: ['unmute', 'uto'],
+  category: 'moderation',
+  description: 'Remove a timeout from a member',
+  usage: '.untimeout <@user> [reason]',
+  example: '.untimeout @John appealed',
+
+  async execute(message, args, client, config) {
+    if (!await requireTier(message.member, 'v3', config))
+      return message.reply({ embeds: [errorEmbed('You need **v3** or higher.')] });
+
+    const target = await resolveMember(message.guild, args[0]);
+    if (!target) return message.reply({ embeds: [errorEmbed('Member not found.')] });
+    if (!await canTarget(message.member, target, config))
+      return message.reply({ embeds: [errorEmbed('Cannot target someone with equal or higher permissions.')] });
+
+    const reason = args.slice(1).join(' ') || 'No reason provided';
+
+    try {
+      await target.timeout(null, reason);
+    } catch {
+      return message.reply({ embeds: [errorEmbed('Failed to remove timeout.')] });
+    }
+
+    await logAction(message.guild, { action: 'Timeout Removed', moderator: message.author.id, target: target.id, reason, color: 0x57F287 });
+    return message.reply({ embeds: [successEmbed(`Timeout removed from **${target.user.tag}**.\n**Reason:** ${reason}`)] });
+  },
+};
+
 // .modlogs
 const modlogs = {
   name: 'modlogs',
@@ -122,4 +153,4 @@ const modlogs = {
   },
 };
 
-module.exports = [kick, timeout, modlogs];
+module.exports = [kick, timeout, untimeout, modlogs];

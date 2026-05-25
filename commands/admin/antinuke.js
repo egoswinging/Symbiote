@@ -4,306 +4,244 @@ const { resolveMember } = require('../../utils/helpers');
 const GuildConfig = require('../../models/GuildConfig');
 const { EmbedBuilder } = require('discord.js');
 
-const ACTIONS = {
-  channeldelete: { key: 'channelDelete', label: 'Channel Delete', desc: 'Deleting channels rapidly' },
-  roledelete:    { key: 'roleDelete',    label: 'Role Delete',    desc: 'Deleting roles rapidly' },
-  ban:           { key: 'ban',           label: 'Mass Ban',       desc: 'Banning members rapidly' },
-  kick:          { key: 'kick',          label: 'Mass Kick',      desc: 'Kicking members rapidly' },
-  spam:          { key: 'spam',          label: 'Message Spam',   desc: 'Spamming messages rapidly' },
+const TRIGGERS = {
+  channeldelete: { key: 'channelDelete', label: 'Channel Delete', defaultLimit: 3, desc: 'Mass channel deletion' },
+  channel:       { key: 'channelDelete', label: 'Channel Delete', defaultLimit: 3, desc: 'Mass channel deletion' },
+  roledelete:    { key: 'roleDelete',    label: 'Role Delete',    defaultLimit: 3, desc: 'Mass role deletion' },
+  role:          { key: 'roleDelete',    label: 'Role Delete',    defaultLimit: 3, desc: 'Mass role deletion' },
+  ban:           { key: 'ban',           label: 'Mass Ban',       defaultLimit: 3, desc: 'Mass banning members' },
+  massban:       { key: 'ban',           label: 'Mass Ban',       defaultLimit: 3, desc: 'Mass banning members' },
+  kick:          { key: 'kick',          label: 'Mass Kick',      defaultLimit: 5, desc: 'Mass kicking members' },
+  masskick:      { key: 'kick',          label: 'Mass Kick',      defaultLimit: 5, desc: 'Mass kicking members' },
+  spam:          { key: 'spam',          label: 'Message Spam',   defaultLimit: 5, desc: 'Message spam' },
 };
 
-const PUNISHMENTS = ['ban', 'kick', 'timeout', 'vanish', 'removeroles'];
-
-const PUNISHMENT_DISPLAY = {
-  ban:         '🔨 Ban',
-  kick:        '👢 Kick',
-  timeout:     '⏱️ Timeout',
-  vanish:      '👻 Vanish',
-  removeroles: '🛑 Remove Roles',
+const CANONICAL_TRIGGERS = ['channeldelete', 'roledelete', 'ban', 'kick', 'spam'];
+const PUNISHMENTS = {
+  ban: 'ban',
+  kick: 'kick',
+  timeout: 'timeout',
+  mute: 'timeout',
+  to: 'timeout',
+  vanish: 'vanish',
+  removeroles: 'removeRoles',
+  removerole: 'removeRoles',
+  remove: 'removeRoles',
+  roles: 'removeRoles',
+  none: 'none',
+  off: 'none',
 };
 
-// Normalize punishment input
+const PUNISHMENT_LABELS = {
+  ban: 'Ban',
+  kick: 'Kick',
+  timeout: 'Timeout',
+  vanish: 'Vanish',
+  removeRoles: 'Remove Roles',
+  none: 'Off',
+};
+
+function normalizeTrigger(input) {
+  return TRIGGERS[String(input || '').toLowerCase()] || null;
+}
+
 function normalizePunishment(input) {
-  const map = {
-    ban: 'ban', banned: 'ban',
-    kick: 'kick', kicked: 'kick',
-    timeout: 'timeout', mute: 'timeout', to: 'timeout',
-    vanish: 'vanish',
-    removeroles: 'removeRoles', removerole: 'removeRoles', remove: 'removeRoles', roles: 'removeRoles',
-  };
-  return map[input.toLowerCase()] || null;
+  return PUNISHMENTS[String(input || '').toLowerCase()] || null;
+}
+
+function parseLimit(input) {
+  if (input === undefined || input === null || input === '') return null;
+  const limit = Number.parseInt(input, 10);
+  return Number.isInteger(limit) && limit > 0 && limit <= 50 ? limit : null;
+}
+
+function parseDuration(input) {
+  const match = String(input || '').toLowerCase().match(/^(\d+)(m|min|h|hr|d|day)?$/);
+  if (!match) return null;
+  const amount = Number.parseInt(match[1], 10);
+  const unit = match[2] || 'm';
+  const minutes = unit.startsWith('d') ? amount * 1440 : unit.startsWith('h') ? amount * 60 : amount;
+  if (!Number.isFinite(minutes) || minutes < 1 || minutes > 28 * 1440) return null;
+  return minutes;
+}
+
+function formatMinutes(minutes) {
+  if (minutes % 1440 === 0) return `${minutes / 1440}d`;
+  if (minutes % 60 === 0) return `${minutes / 60}h`;
+  return `${minutes}m`;
+}
+
+function triggerRows(an) {
+  return CANONICAL_TRIGGERS.map(name => {
+    const trigger = TRIGGERS[name];
+    const punishment = an?.punishments?.[trigger.key] || an?.punishment || 'removeRoles';
+    const limit = an?.thresholds?.[trigger.key] ?? trigger.defaultLimit;
+    const label = PUNISHMENT_LABELS[punishment] || punishment;
+    return `**${trigger.label}** - ${trigger.desc}\n> Action: \`${label}\` | Limit: \`${limit}\` in 10s`;
+  }).join('\n\n');
+}
+
+function helpEmbed(an) {
+  return new EmbedBuilder()
+    .setColor(an?.enabled ? 0xED4245 : 0x5865F2)
+    .setTitle('Anti-Nuke')
+    .setDescription([
+      `Status: **${an?.enabled ? 'Enabled' : 'Disabled'}**`,
+      '',
+      '**Main Commands**',
+      '`.an on` / `.an off`',
+      '`.an config`',
+      '`.an set <trigger> <action> [limit]`',
+      '`.an limit <trigger> <limit>`',
+      '`.an timeout <duration>`',
+      '`.an wl add @user` / `.an wl remove @user` / `.an wl list`',
+      '',
+      '**Triggers**',
+      '`channeldelete`, `roledelete`, `ban`, `kick`, `spam`',
+      '',
+      '**Actions**',
+      '`ban`, `kick`, `timeout`, `vanish`, `removeroles`, `none`',
+      '',
+      '**Examples**',
+      '`.an set ban ban 3`',
+      '`.an set kick ban 3`',
+      '`.an set channeldelete ban 2`',
+      '`.an set spam timeout 5`',
+    ].join('\n'));
 }
 
 module.exports = {
   name: 'antinuke',
   aliases: ['an'],
   category: 'admin',
-  description: 'Manage the anti-nuke system',
-  usage: '.antinuke <enable|disable|config|add|remove|timeout|whitelist>',
-  example: '.antinuke add channeldelete ban\n.antinuke add spam timeout\n.antinuke timeout 7d',
+  description: 'Easy anti-nuke setup with per-trigger actions',
+  usage: '.an <on|off|config|set|limit|timeout|wl>',
+  example: '.an set ban ban 3\n.an set kick ban 3\n.an config',
 
   async execute(message, args, client, config) {
-    if (!await requireTier(message.member, 'owner', config))
+    if (!await requireTier(message.member, 'owner', config)) {
       return message.reply({ embeds: [errorEmbed('Only **owners** can manage anti-nuke.')] });
-
-    const sub = args[0]?.toLowerCase();
-    const an  = config.antiNuke;
-
-    // ── enable ────────────────────────────────────────────────────────────────
-    if (sub === 'enable') {
-      await GuildConfig.updateOne({ guildId: message.guild.id }, { 'antiNuke.enabled': true });
-      return message.reply({ embeds: [successEmbed('Anti-nuke **enabled**.')] });
     }
 
-    // ── disable ───────────────────────────────────────────────────────────────
-    if (sub === 'disable') {
+    const sub = String(args[0] || 'help').toLowerCase();
+    const an = config.antiNuke || {};
+
+    if (['help', 'h', '?'].includes(sub)) {
+      return message.reply({ embeds: [helpEmbed(an)] });
+    }
+
+    if (['on', 'enable', 'enabled'].includes(sub)) {
+      await GuildConfig.updateOne({ guildId: message.guild.id }, { 'antiNuke.enabled': true });
+      return message.reply({ embeds: [successEmbed('Anti-nuke **enabled**. Use `.an config` to review settings.')] });
+    }
+
+    if (['off', 'disable', 'disabled'].includes(sub)) {
       await GuildConfig.updateOne({ guildId: message.guild.id }, { 'antiNuke.enabled': false });
       return message.reply({ embeds: [successEmbed('Anti-nuke **disabled**.')] });
     }
 
-    // ── config ────────────────────────────────────────────────────────────────
-    if (sub === 'config') {
-      const timeoutDuration = an.timeoutDuration || 60;
-      const days  = Math.floor(timeoutDuration / 1440);
-      const hours = Math.floor((timeoutDuration % 1440) / 60);
-      const mins  = timeoutDuration % 60;
-      const timeoutStr = days > 0 ? `${days}d ${hours}h` : hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
-
-      const rows = Object.entries(ACTIONS).map(([, { key, label, desc }]) => {
-        const threshold  = an.thresholds?.[key] ?? '—';
-        const punishment = an.punishments?.[key] || an.punishment || 'removeRoles';
-        const punDisplay = PUNISHMENT_DISPLAY[punishment.toLowerCase()] || punishment;
-        return `**${label}**\n> Limit: \`${threshold}\` per 10s  →  ${punDisplay}\n> *${desc}*`;
-      });
-
+    if (['config', 'settings', 'show'].includes(sub)) {
       const embed = new EmbedBuilder()
         .setColor(an.enabled ? 0xED4245 : 0x2B2D31)
-        .setTitle(`🛡️ Anti-Nuke — ${an.enabled ? '✅ Enabled' : '❌ Disabled'}`)
-        .setDescription(rows.join('\n\n'))
+        .setTitle(`Anti-Nuke - ${an.enabled ? 'Enabled' : 'Disabled'}`)
+        .setDescription(triggerRows(an))
         .addFields(
-          { name: '⏱️ Timeout Duration', value: `\`${timeoutStr}\``, inline: true },
-          { name: '🛡️ Block Personal Apps', value: an.blockUserApps !== false ? '✅ On' : '❌ Off', inline: true },
-          {
-            name: '✅ Whitelist',
-            value: an.whitelist?.length ? an.whitelist.map(id => `<@${id}>`).join(', ') : '`None`',
-            inline: false,
-          },
+          { name: 'Timeout Action Duration', value: `\`${formatMinutes(an.timeoutDuration || 60)}\``, inline: true },
+          { name: 'Personal App Blocking', value: an.blockUserApps !== false ? '`On`' : '`Off`', inline: true },
+          { name: 'Whitelist', value: an.whitelist?.length ? an.whitelist.map(id => `<@${id}>`).join(', ') : '`None`', inline: false },
         )
-        .setFooter({ text: 'Use .antinuke add <action> <punishment> to configure each trigger' })
-        .setTimestamp();
-
+        .setFooter({ text: '.an set <trigger> <action> [limit]' });
       return message.reply({ embeds: [embed] });
     }
 
-    // ── add <action> <punishment> [limit] ─────────────────────────────────────
-    // Formula: .antinuke add channeldelete ban
-    //          .antinuke add spam timeout
-    //          .antinuke add kick ban 3       (optional: set limit too)
-    if (sub === 'add') {
-      const actionInput = args[1]?.toLowerCase();
-      const punishInput = args[2]?.toLowerCase();
-      const limitInput  = args[3];
+    if (['set', 'add', 'action'].includes(sub)) {
+      const trigger = normalizeTrigger(args[1]);
+      const punishment = normalizePunishment(args[2]);
+      const limit = parseLimit(args[3]);
 
-      if (!actionInput || !punishInput) {
-        const actionList = Object.entries(ACTIONS)
-          .map(([alias, { label, desc }]) => `\`${alias}\` — ${label}: ${desc}`)
-          .join('\n');
-        return message.reply({
-          embeds: [new EmbedBuilder()
-            .setColor(0x5865F2)
-            .setTitle('📋 .antinuke add — Usage')
-            .setDescription(
-              '**Formula:** `.antinuke add <action> <punishment> [limit]`\n\n' +
-              '**Actions:**\n' + actionList + '\n\n' +
-              '**Punishments:** `ban` `kick` `timeout` `vanish` `removeroles`\n\n' +
-              '**[limit]** — optional, how many actions in 10s before punishment fires\n\n' +
-              '**Examples:**\n' +
-              '`.antinuke add channeldelete ban` — ban if channels deleted rapidly\n' +
-              '`.antinuke add spam timeout` — timeout spammers\n' +
-              '`.antinuke add kick ban 3` — ban if 3 kicks in 10s'
-            )]
-        });
+      if (!trigger || !punishment) {
+        return message.reply({ embeds: [errorEmbed('Use `.an set <trigger> <action> [limit]`.\nExample: `.an set kick ban 3`')] });
+      }
+      if (args[3] && !limit) {
+        return message.reply({ embeds: [errorEmbed('Limit must be a number from 1 to 50.')] });
       }
 
-      const action = ACTIONS[actionInput];
-      if (!action)
-        return message.reply({ embeds: [errorEmbed(`Unknown action \`${actionInput}\`.\n\nValid actions: ${Object.keys(ACTIONS).map(a => `\`${a}\``).join(', ')}`)] });
-
-      const punishment = normalizePunishment(punishInput);
-      if (!punishment)
-        return message.reply({ embeds: [errorEmbed(`Unknown punishment \`${punishInput}\`.\n\nValid: \`ban\` \`kick\` \`timeout\` \`vanish\` \`removeroles\``)] });
-
-      const updates = { [`antiNuke.punishments.${action.key}`]: punishment };
-
-      if (limitInput) {
-        const limit = parseInt(limitInput);
-        if (isNaN(limit) || limit < 1)
-          return message.reply({ embeds: [errorEmbed('Limit must be a positive number (e.g. `3`).')] });
-        updates[`antiNuke.thresholds.${action.key}`] = limit;
-      }
-
+      const updates = { [`antiNuke.punishments.${trigger.key}`]: punishment };
+      if (limit) updates[`antiNuke.thresholds.${trigger.key}`] = limit;
       await GuildConfig.updateOne({ guildId: message.guild.id }, updates);
 
-      const punDisplay = PUNISHMENT_DISPLAY[punishment.toLowerCase()] || punishment;
-      const limitText  = limitInput ? ` (triggers after \`${limitInput}\` actions in 10s)` : '';
-
-      return message.reply({
-        embeds: [successEmbed(
-          `✅ **${action.label}** → ${punDisplay}${limitText}\n\n` +
-          `Use \`.antinuke config\` to see all your settings.`
-        )]
-      });
+      const limitText = limit ? ` after **${limit}** actions in 10s` : '';
+      return message.reply({ embeds: [successEmbed(`**${trigger.label}** now uses **${PUNISHMENT_LABELS[punishment]}**${limitText}.`)] });
     }
 
-    // ── remove <action> — reset a trigger back to default ─────────────────────
-    if (sub === 'remove') {
-      const actionInput = args[1]?.toLowerCase();
-      const action = ACTIONS[actionInput];
-      if (!action)
-        return message.reply({ embeds: [errorEmbed(`Unknown action \`${actionInput}\`.\n\nValid: ${Object.keys(ACTIONS).map(a => `\`${a}\``).join(', ')}`)] });
+    if (['limit', 'threshold'].includes(sub)) {
+      const trigger = normalizeTrigger(args[1]);
+      const limit = parseLimit(args[2]);
+      if (!trigger || !limit) {
+        return message.reply({ embeds: [errorEmbed('Use `.an limit <trigger> <limit>`.\nExample: `.an limit ban 3`')] });
+      }
+      await GuildConfig.updateOne({ guildId: message.guild.id }, { [`antiNuke.thresholds.${trigger.key}`]: limit });
+      return message.reply({ embeds: [successEmbed(`**${trigger.label}** limit set to **${limit}** actions in 10s.`)] });
+    }
 
+    if (['reset', 'remove'].includes(sub)) {
+      const trigger = normalizeTrigger(args[1]);
+      if (!trigger) return message.reply({ embeds: [errorEmbed('Use `.an reset <trigger>`.')] });
       await GuildConfig.updateOne(
         { guildId: message.guild.id },
         {
-          [`antiNuke.punishments.${action.key}`]: null,
-          [`antiNuke.thresholds.${action.key}`]: 3,
+          [`antiNuke.punishments.${trigger.key}`]: null,
+          [`antiNuke.thresholds.${trigger.key}`]: trigger.defaultLimit,
         }
       );
-
-      return message.reply({ embeds: [successEmbed(`Reset **${action.label}** back to default settings.`)] });
+      return message.reply({ embeds: [successEmbed(`**${trigger.label}** reset to default.`)] });
     }
 
-    // ── timeout <duration> — set how long timeouts last ───────────────────────
-    // Accepts: 30m, 2h, 1d, 7d, etc
     if (sub === 'timeout') {
-      const input = args[1]?.toLowerCase();
-      if (!input)
-        return message.reply({ embeds: [errorEmbed('Provide a duration.\n**Examples:** `.antinuke timeout 30m` `.antinuke timeout 2h` `.antinuke timeout 7d`\n\nMax is **28 days** (Discord limit).')] });
-
-      let totalMinutes = 0;
-      const match = input.match(/^(\d+)(m|h|d)$/);
-      if (!match)
-        return message.reply({ embeds: [errorEmbed('Invalid format. Use: `30m` (minutes), `2h` (hours), `7d` (days).')] });
-
-      const value = parseInt(match[1]);
-      const unit  = match[2];
-
-      if (unit === 'm') totalMinutes = value;
-      if (unit === 'h') totalMinutes = value * 60;
-      if (unit === 'd') totalMinutes = value * 1440;
-
-      // Discord max timeout is 28 days
-      const maxMinutes = 28 * 24 * 60;
-      if (totalMinutes > maxMinutes)
-        return message.reply({ embeds: [errorEmbed('Maximum timeout is **28 days** (Discord limit).')] });
-      if (totalMinutes < 1)
-        return message.reply({ embeds: [errorEmbed('Minimum timeout is 1 minute.')] });
-
-      await GuildConfig.updateOne({ guildId: message.guild.id }, { 'antiNuke.timeoutDuration': totalMinutes });
-
-      const displayStr = unit === 'd' ? `${value} day${value !== 1 ? 's' : ''}` :
-                         unit === 'h' ? `${value} hour${value !== 1 ? 's' : ''}` :
-                         `${value} minute${value !== 1 ? 's' : ''}`;
-
-      return message.reply({ embeds: [successEmbed(`Timeout duration set to **${displayStr}**.\nThis applies whenever \`timeout\` is used as a punishment.`)] });
+      const minutes = parseDuration(args[1]);
+      if (!minutes) {
+        return message.reply({ embeds: [errorEmbed('Use `.an timeout <duration>` like `.an timeout 30m`, `.an timeout 2h`, or `.an timeout 7d`. Max is 28d.')] });
+      }
+      await GuildConfig.updateOne({ guildId: message.guild.id }, { 'antiNuke.timeoutDuration': minutes });
+      return message.reply({ embeds: [successEmbed(`Anti-nuke timeout action duration set to **${formatMinutes(minutes)}**.`)] });
     }
 
-    // ── whitelist add/remove/list ─────────────────────────────────────────────
-    if (sub === 'whitelist') {
-      const action = args[1]?.toLowerCase();
-
+    if (['wl', 'whitelist'].includes(sub)) {
+      const action = String(args[1] || '').toLowerCase();
       if (action === 'list') {
         const list = an.whitelist || [];
-        return message.reply({
-          embeds: [new EmbedBuilder()
-            .setColor(0x5865F2)
-            .setTitle('✅ Anti-Nuke Whitelist')
-            .setDescription(list.length ? list.map(id => `<@${id}>`).join('\n') : '`Nobody whitelisted`')
-            .setFooter({ text: 'Whitelisted users bypass ALL anti-nuke triggers' })]
+        return message.reply({ embeds: [new EmbedBuilder()
+          .setColor(0x5865F2)
+          .setTitle('Anti-Nuke Whitelist')
+          .setDescription(list.length ? list.map(id => `<@${id}> (${id})`).join('\n') : '`Nobody whitelisted`')]
         });
       }
 
       const target = await resolveMember(message.guild, args[2]);
-      if (!target)
-        return message.reply({ embeds: [errorEmbed('Member not found.\n**Usage:** `.antinuke whitelist <add|remove|list> [@user]`')] });
+      if (!target) return message.reply({ embeds: [errorEmbed('Use `.an wl add @user`, `.an wl remove @user`, or `.an wl list`.')] });
 
+      const list = [...new Set((an.whitelist || []).map(String))];
       if (action === 'add') {
-        if (an.whitelist?.includes(target.id))
-          return message.reply({ embeds: [errorEmbed('User is already whitelisted.')] });
-        an.whitelist = an.whitelist || [];
-        an.whitelist.push(target.id);
-        await GuildConfig.updateOne({ guildId: message.guild.id }, { 'antiNuke.whitelist': an.whitelist });
+        if (!list.includes(target.id)) list.push(target.id);
+        await GuildConfig.updateOne({ guildId: message.guild.id }, { 'antiNuke.whitelist': list });
         return message.reply({ embeds: [successEmbed(`${target} added to anti-nuke whitelist.`)] });
       }
-
       if (action === 'remove') {
-        const idx = (an.whitelist || []).indexOf(target.id);
-        if (idx === -1) return message.reply({ embeds: [errorEmbed('That user is not whitelisted.')] });
-        an.whitelist.splice(idx, 1);
-        await GuildConfig.updateOne({ guildId: message.guild.id }, { 'antiNuke.whitelist': an.whitelist });
+        await GuildConfig.updateOne({ guildId: message.guild.id }, { 'antiNuke.whitelist': list.filter(id => id !== target.id) });
         return message.reply({ embeds: [successEmbed(`${target} removed from anti-nuke whitelist.`)] });
       }
-
-      return message.reply({ embeds: [errorEmbed('Usage: `.antinuke whitelist <add|remove|list> [@user]`')] });
+      return message.reply({ embeds: [errorEmbed('Use `.an wl add @user`, `.an wl remove @user`, or `.an wl list`.')] });
     }
 
-    // ── blockuserapps on/off ──────────────────────────────────────────────────
-    if (sub === 'blockuserapps') {
-      const val = args[1]?.toLowerCase();
-      const enabled = ['on', 'true', 'enable', 'yes'].includes(val);
+    if (['apps', 'blockapps', 'blockuserapps'].includes(sub)) {
+      const value = String(args[1] || '').toLowerCase();
+      const enabled = ['on', 'enable', 'enabled', 'true', 'yes'].includes(value);
+      const disabled = ['off', 'disable', 'disabled', 'false', 'no'].includes(value);
+      if (!enabled && !disabled) return message.reply({ embeds: [errorEmbed('Use `.an apps on` or `.an apps off`.')] });
       await GuildConfig.updateOne({ guildId: message.guild.id }, { 'antiNuke.blockUserApps': enabled });
-      return message.reply({ embeds: [successEmbed(`Personal app blocking **${enabled ? 'enabled' : 'disabled'}**.`)] });
+      return message.reply({ embeds: [successEmbed(`Personal app blocking is now **${enabled ? 'on' : 'off'}**.`)] });
     }
 
-    // ── default help ──────────────────────────────────────────────────────────
-    const embed = new EmbedBuilder()
-      .setColor(0xED4245)
-      .setTitle('🛡️ Anti-Nuke — Commands')
-      .addFields(
-        {
-          name: '⚡ Toggle',
-          value: '`.antinuke enable` — turn on\n`.antinuke disable` — turn off\n`.antinuke config` — view all settings',
-          inline: false,
-        },
-        {
-          name: '➕ Add a trigger (main command)',
-          value: [
-            '**Formula:** `.antinuke add <action> <punishment> [limit]`',
-            '',
-            '**Actions:** `channeldelete` `roledelete` `ban` `kick` `spam`',
-            '**Punishments:** `ban` `kick` `timeout` `vanish` `removeroles`',
-            '**[limit]** — optional, actions in 10s before punishment (default: 3)',
-            '',
-            '**Examples:**',
-            '`.antinuke add channeldelete ban` — ban if channels deleted rapidly',
-            '`.antinuke add spam timeout` — timeout spammers',
-            '`.antinuke add kick ban 3` — ban if 3 kicks happen in 10s',
-          ].join('\n'),
-          inline: false,
-        },
-        {
-          name: '⏱️ Set timeout duration',
-          value: '`.antinuke timeout 30m` — 30 minutes\n`.antinuke timeout 2h` — 2 hours\n`.antinuke timeout 7d` — 7 days\n*(Max: 28 days)*',
-          inline: false,
-        },
-        {
-          name: '🗑️ Reset a trigger',
-          value: '`.antinuke remove <action>` — reset back to defaults',
-          inline: false,
-        },
-        {
-          name: '✅ Whitelist',
-          value: '`.antinuke whitelist add @user`\n`.antinuke whitelist remove @user`\n`.antinuke whitelist list`',
-          inline: false,
-        },
-        {
-          name: '🔒 Block Personal Apps',
-          value: '`.antinuke blockuserapps on` — block user-installed bots\n`.antinuke blockuserapps off` — allow them',
-          inline: false,
-        },
-      )
-      .setFooter({ text: 'Run .antinuke config to see your current settings' });
-
-    return message.reply({ embeds: [embed] });
+    return message.reply({ embeds: [helpEmbed(an)] });
   },
 };

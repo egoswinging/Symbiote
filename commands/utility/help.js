@@ -15,7 +15,7 @@ const COMMAND_DATA = {
     { name: 'resetrole',   desc: 'Reset a role config key',                                     example: '.resetrole vanish' },
     { name: 'showconfig',  desc: 'Show the full server bot config',                             example: '.showconfig' },
     { name: 'rolelist',    desc: 'View all roles in a specific tier',                           example: '.rolelist v1' },
-    { name: 'antinuke',    desc: 'Manage anti-nuke — use .antinuke for the full guide',         example: '.antinuke add channeldelete ban\n.antinuke add spam timeout\n.antinuke timeout 7d' },
+    { name: 'antinuke',    desc: 'Easy anti-nuke setup with per-trigger actions',                example: '.an set ban ban 3\n.an set kick ban 3\n.an config' },
   ],
   moderation: [
     { name: 'wipe',          desc: 'Ban a user from the server',                                example: '.wipe @John rule breaking' },
@@ -31,6 +31,7 @@ const COMMAND_DATA = {
     { name: 'setupvanish',   desc: 'Apply vanish role deny perms to every channel',             example: '.setupvanish' },
     { name: 'kick',          desc: 'Kick a member from the server',                             example: '.kick @John spamming' },
     { name: 'timeout',       desc: 'Timeout a member for a specific duration',                   example: '.timeout @John 30m spam\n.timeout @John 2h spam' },
+    { name: 'untimeout',     desc: 'Remove a timeout from a member',                             example: '.untimeout @John appealed' },
     { name: 'modlogs',       desc: 'View mod action history for a user',                        example: '.modlogs @John' },
     { name: 'nuke',          desc: 'Clone and delete the current channel silently',             example: '.nuke' },
     { name: 'clean',         desc: 'Toggle auto-delete mode in this channel (silent)',          example: '.clean' },

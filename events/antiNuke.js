@@ -9,6 +9,7 @@ function getPunishment(config, trigger) {
 }
 
 async function punish(guild, userId, punishment, reason, config = null) {
+  if (!punishment || punishment === 'none') return;
   const member = await guild.members.fetch(userId).catch(() => null);
   if (!member) return;
 
@@ -46,6 +47,8 @@ async function punish(guild, userId, punishment, reason, config = null) {
         if (cfg?.vanishRole) await member.roles.add(cfg.vanishRole).catch(() => {});
         break;
       }
+      case 'none':
+        return;
     }
 
     const embed = new EmbedBuilder()
@@ -91,6 +94,7 @@ async function handleEvent(guild, auditLogEvent, trigger) {
   if (ud?.isSecret || ud?.isInnerCircle) return;
 
   const threshold = config.antiNuke.thresholds?.[trigger] ?? 3;
+  if (!threshold) return;
   const exceeded  = trackAction(guild.id, executor.id, trigger, threshold);
 
   if (exceeded) {
@@ -128,9 +132,13 @@ module.exports.guildMemberRemove = {
       const { executor } = entry;
       if (!executor || config.antiNuke.whitelist?.includes(executor.id)) return;
       if (executor.id === member.guild.client.user.id) return;
+      if (member.guild.ownerId === executor.id) return;
+      const ownerIds = (process.env.OWNER_IDS || '').split(',').map(s => s.trim());
+      if (ownerIds.includes(executor.id)) return;
       const ud = await UserData.findOne({ guildId: member.guild.id, userId: executor.id }).lean();
       if (ud?.isSecret || ud?.isInnerCircle) return;
       const threshold = config.antiNuke.thresholds?.kick ?? 5;
+      if (!threshold) return;
       const exceeded  = trackAction(member.guild.id, executor.id, 'kick', threshold);
       if (exceeded) {
         const punishment = getPunishment(config, 'kick');
