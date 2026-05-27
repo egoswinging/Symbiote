@@ -51,8 +51,11 @@ module.exports = {
       if (list?.includes(value))
         return message.reply({ embeds: [errorEmbed(`\`${value}\` is already in the ${type} filter.`)] });
 
-      await GuildConfig.updateOne({ guildId: message.guild.id }, { $push: { [field]: value } });
-      return message.reply({ embeds: [successEmbed(`Added \`${value}\` to the **${type}** filter.`)] });
+      await GuildConfig.updateOne(
+        { guildId: message.guild.id },
+        { $push: { [field]: value }, $set: { 'automod.enabled': true } }
+      );
+      return message.reply({ embeds: [successEmbed(`Added \`${value}\` to the **${type}** filter and enabled automod.`)] });
     }
 
     // ── remove word/link ──────────────────────────────────────────────────────

@@ -31,6 +31,7 @@ const PUBLIC_COMMANDS = new Set([
   'wipe', 'unwipe', 'wipelist', 'restore', 'unwipeall',
   'vanish', 'unvanish', 'restorevanish', 'vanishlist', 'setupvanish',
   'timeout', 'mute', 'to', 'untimeout', 'unmute', 'uto',
+  'automod', 'am',
   'close', 'closeremove',
 ]);
 
@@ -39,6 +40,31 @@ function markBotDeleted(id) {
   try {
     require('./messageDelete').markBotDeleted(id);
   } catch {}
+}
+
+function normalizeAutomodText(value) {
+  return String(value || '')
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[\u0300-\u036f\u200b-\u200f\u202a-\u202e]/g, '')
+    .trim();
+}
+
+function compactAutomodText(value) {
+  return normalizeAutomodText(value).replace(/[\s._\-*`~|/\\()[\]{}<>'":;,!?\u00a0]+/g, '');
+}
+
+function automodMatches(content, blockedValue) {
+  const blocked = normalizeAutomodText(blockedValue);
+  if (!blocked) return false;
+
+  const normalizedContent = normalizeAutomodText(content);
+  if (normalizedContent.includes(blocked)) return true;
+
+  const compactBlocked = compactAutomodText(blocked);
+  if (compactBlocked.length < 2) return false;
+
+  return compactAutomodText(normalizedContent).includes(compactBlocked);
 }
 
 module.exports = {
@@ -62,16 +88,13 @@ module.exports = {
     }
 
     // ── AUTOMOD: word + link filter ───────────────────────────────────────────
-    if (config.automod?.enabled && !isProtected) {
-      // Lowercase entire message for case-insensitive matching
-      const contentLower = message.content.toLowerCase();
+    if (config.automod?.enabled && !isBotOwner) {
       let triggered = null;
 
       // Check banned words — matches anywhere in the message (e.g. "Yo Negus" triggers "negus")
       for (const word of config.automod.words || []) {
-        if (!word) continue;
-        const w = word.toLowerCase().trim();
-        if (contentLower.includes(w)) {
+        const w = normalizeAutomodText(word);
+        if (automodMatches(message.content, w)) {
           triggered = `Banned word: \`${w}\``;
           break;
         }
@@ -80,9 +103,9 @@ module.exports = {
       // Check banned links
       if (!triggered) {
         for (const link of config.automod.links || []) {
-          if (!link) continue;
-          if (contentLower.includes(link.toLowerCase().trim())) {
-            triggered = `Banned link: \`${link}\``;
+          const l = normalizeAutomodText(link);
+          if (automodMatches(message.content, l)) {
+            triggered = `Banned link: \`${l}\``;
             break;
           }
         }
