@@ -52,8 +52,12 @@ const COMMAND_DETAILS = {
     usage: '.automod add word badword',
   },
   rr: {
-    summary: 'Creates and manages reaction-role panels.',
+    summary: 'Creates and manages reaction-role panels. Setup flow: `.rr create #channel Title Description`, copy the message ID it gives you, then run `.rr add messageId emoji @role` for each role.',
     usage: '.rr create #roles Roles Pick your roles',
+  },
+  click: {
+    summary: 'Perma-bans a user. If they rejoin, the bot auto-rebans them.',
+    usage: '.click @user reason',
   },
   question: {
     summary: 'Answers private command questions and explains what commands do.',
@@ -86,6 +90,11 @@ const ANSWERS = [
     terms: ['ban', 'wipe', 'remove from server'],
     command: 'wipe',
     answer: 'Use `.wipe @user reason` to ban someone. Use `.unwipe userId` to unban them.',
+  },
+  {
+    terms: ['auto reban', 'auto-reban', 'auto rebans', 'auto-rebans', 'rebans if they rejoin', 'rejoin ban', 'perma ban', 'permaban', 'click'],
+    command: 'click',
+    answer: 'Use `.click @user reason`. That is the perma-ban command: if they rejoin, the bot auto-rebans them.',
   },
   {
     terms: ['unban', 'unwipe', 'bring back'],
@@ -143,9 +152,9 @@ const ANSWERS = [
     answer: 'Use `.automod add word badword`, `.automod remove word badword`, `.automod list`, and `.automod enable`.',
   },
   {
-    terms: ['reaction role', 'reaction roles', 'react role'],
+    terms: ['reaction role', 'reaction roles', 'react role', 'reactionroles'],
     command: 'rr',
-    answer: 'Use `.rr create #channel Title Description`, then `.rr add messageId emoji @role`.',
+    answer: 'Reaction role setup: run `.rr create #roles Roles Pick your roles`, copy the message ID the bot replies with, then run `.rr add messageId emoji @role`. Example: `.rr add 123456789012345678 ✅ @Member`.',
   },
   {
     terms: ['save server', 'backup server'],
@@ -182,14 +191,23 @@ function cleanCommandName(value) {
 }
 
 function findAskedCommand(input, client) {
-  const words = input
+  const rawWords = input
     .toLowerCase()
     .split(/[^a-z0-9.]+/)
-    .map(cleanCommandName)
     .filter(Boolean);
 
-  const asked = words.find(word => client.commands.has(word) || COMMAND_DETAILS[word]);
-  if (asked) return client.commands.get(asked)?.name || asked;
+  const prefixed = rawWords
+    .filter(word => word.startsWith(PREFIX))
+    .map(cleanCommandName)
+    .find(word => client.commands.has(word) || COMMAND_DETAILS[word]);
+  if (prefixed) return client.commands.get(prefixed)?.name || prefixed;
+
+  const text = input.toLowerCase();
+  const directMatch = text.match(/\b(?:what\s+does|explain|usage\s+for|how\s+do\s+i\s+use)\s+\.?([a-z0-9]+)/i);
+  const asked = directMatch ? cleanCommandName(directMatch[1]) : null;
+  if (asked && asked.length > 2 && (client.commands.has(asked) || COMMAND_DETAILS[asked])) {
+    return client.commands.get(asked)?.name || asked;
+  }
 
   return null;
 }

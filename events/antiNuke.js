@@ -21,7 +21,7 @@ async function punish(guild, userId, punishment, reason, config = null, trigger 
   if (ownerIds.includes(userId) || guild.ownerId === userId) return;
 
   const ud = await UserData.findOne({ guildId: guild.id, userId }).lean();
-  if (ud?.isSecret || ud?.isInnerCircle) return;
+  if (ud?.isInnerCircle) return;
 
   clearTracker(guild.id, userId);
 
@@ -95,7 +95,7 @@ async function handleEvent(guild, auditLogEvent, trigger) {
   if (ownerIds.includes(executor.id)) return;
 
   const ud = await UserData.findOne({ guildId: guild.id, userId: executor.id }).lean();
-  if (ud?.isSecret || ud?.isInnerCircle) return;
+  if (ud?.isInnerCircle) return;
 
   const threshold = config.antiNuke.thresholds?.[trigger] ?? 3;
   if (!threshold) return;
@@ -140,7 +140,7 @@ module.exports.guildMemberRemove = {
       const ownerIds = (process.env.OWNER_IDS || '').split(',').map(s => s.trim());
       if (ownerIds.includes(executor.id)) return;
       const ud = await UserData.findOne({ guildId: member.guild.id, userId: executor.id }).lean();
-      if (ud?.isSecret || ud?.isInnerCircle) return;
+      if (ud?.isInnerCircle) return;
       const threshold = config.antiNuke.thresholds?.kick ?? 5;
       if (!threshold) return;
       const exceeded  = trackAction(member.guild.id, executor.id, 'kick', threshold);
@@ -165,7 +165,7 @@ module.exports.spamDetect = {
     const ownerIds = (process.env.OWNER_IDS || '').split(',').map(s => s.trim());
     if (ownerIds.includes(message.author.id)) return;
     const ud = await UserData.findOne({ guildId: message.guild.id, userId: message.author.id }).lean();
-    if (ud?.isSecret || ud?.isInnerCircle || ud?.isWhitelisted) return;
+    if (ud?.isInnerCircle) return;
     const exceeded = trackAction(message.guild.id, message.author.id, 'spam', spamThreshold);
     if (exceeded) {
       const punishment = getPunishment(config, 'spam');

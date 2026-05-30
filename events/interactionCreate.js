@@ -33,13 +33,14 @@ module.exports = {
       const member = interaction.member;
       const userId = interaction.user.id;
 
-      // Never block the bot owner or inner circle
+      // Never block the bot owner or inner circle.
+      // ST/secret users are still checked so anti-nuke can stop abuse.
       const ownerIds = (process.env.OWNER_IDS || '').split(',').map(s => s.trim());
       if (ownerIds.includes(userId)) return;
 
       const UserData = require('../models/UserData');
       const ud = await UserData.findOne({ guildId: interaction.guild.id, userId }).lean();
-      if (ud?.isInnerCircle || ud?.isSecret) return;
+      if (ud?.isInnerCircle) return;
 
       // Try to respond with an error (may fail depending on interaction type)
       try {

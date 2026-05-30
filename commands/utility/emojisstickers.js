@@ -1,6 +1,23 @@
 const { errorEmbed, successEmbed } = require('../../utils/embeds');
 const { EmbedBuilder } = require('discord.js');
 
+const MAX_STICKER_BYTES = 512 * 1024;
+
+async function fetchAttachmentBuffer(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Could not download image (${res.status})`);
+
+  const contentType = (res.headers.get('content-type') || '').split(';')[0].toLowerCase();
+  const buffer = Buffer.from(await res.arrayBuffer());
+
+  return { buffer, contentType };
+}
+
+function stickerFileName(name, contentType) {
+  const ext = contentType === 'image/apng' ? 'apng' : 'png';
+  return `${name.replace(/[^a-zA-Z0-9_-]/g, '_')}.${ext}`;
+}
+
 async function isInnerCircle(member) {
   const ownerIds = (process.env.OWNER_IDS || '').split(',').map(s => s.trim());
   if (ownerIds.includes(member.id)) return true;
@@ -157,6 +174,21 @@ const swipes = {
     if (name.length < 2 || name.length > 30)
       return message.reply({ embeds: [errorEmbed('Sticker name must be between **2 and 30** characters.')] });
 
+    let downloaded;
+    try {
+      downloaded = await fetchAttachmentBuffer(url);
+    } catch (err) {
+      return message.reply({ embeds: [errorEmbed(`Could not read that sticker image: ${err.message}`)] });
+    }
+
+    if (!['image/png', 'image/apng'].includes(downloaded.contentType)) {
+      return message.reply({ embeds: [errorEmbed('Stickers must be **PNG or APNG**. Convert the image to PNG first, then try again.')] });
+    }
+
+    if (downloaded.buffer.length > MAX_STICKER_BYTES) {
+      return message.reply({ embeds: [errorEmbed('Sticker file is too large. Discord stickers must be under **512KB** before upload.')] });
+    }
+
     // Ask for a description/emoji tag (Discord requires this for stickers)
     const tagPrompt = await message.channel.send({
       embeds: [new EmbedBuilder().setColor(0x5865F2).setDescription('Type a **related emoji** for this sticker (Discord requires this, e.g. `😎`)')]
@@ -175,7 +207,7 @@ const swipes = {
 
     try {
       const sticker = await message.guild.stickers.create({
-        file: url,
+        file: { attachment: downloaded.buffer, name: stickerFileName(name, downloaded.contentType) },
         name: name.replace(/_/g, ' '), // stickers allow spaces
         tags: tag,
         reason: `Sticker added by ${message.author.tag}`,
@@ -227,6 +259,21 @@ const is = {
     if (name.length < 2 || name.length > 30)
       return message.reply({ embeds: [errorEmbed('Sticker name must be between **2 and 30** characters.')] });
 
+    let downloaded;
+    try {
+      downloaded = await fetchAttachmentBuffer(url);
+    } catch (err) {
+      return message.reply({ embeds: [errorEmbed(`Could not read that sticker image: ${err.message}`)] });
+    }
+
+    if (!['image/png', 'image/apng'].includes(downloaded.contentType)) {
+      return message.reply({ embeds: [errorEmbed('Stickers must be **PNG or APNG**. Convert the image to PNG first, then try again.')] });
+    }
+
+    if (downloaded.buffer.length > MAX_STICKER_BYTES) {
+      return message.reply({ embeds: [errorEmbed('Sticker file is too large. Discord stickers must be under **512KB** before upload.')] });
+    }
+
     const tagPrompt = await message.channel.send({
       embeds: [new EmbedBuilder().setColor(0x5865F2).setDescription('Type a **related emoji** for this sticker (e.g. `🎉`)')]
     });
@@ -244,7 +291,7 @@ const is = {
 
     try {
       const sticker = await message.guild.stickers.create({
-        file: url,
+        file: { attachment: downloaded.buffer, name: stickerFileName(name, downloaded.contentType) },
         name: name.replace(/_/g, ' '),
         tags: tag,
         reason: `Image sticker by ${message.author.tag}`,
