@@ -1,4 +1,4 @@
-const { Schema, model } = require('mongoose');
+const { Schema, model, models } = require('mongoose');
 
 const reactionRoleEntrySchema = new Schema({
   emoji: { type: String, required: true },   // raw emoji or emoji ID for custom
@@ -15,4 +15,4 @@ const reactionRoleSchema = new Schema({
 // Compound index so lookups by message are fast
 reactionRoleSchema.index({ guildId: 1, messageId: 1 }, { unique: true });
 
-module.exports = model('ReactionRole', reactionRoleSchema);
+module.exports = models.ReactionRole || model('ReactionRole', reactionRoleSchema);

@@ -11,7 +11,7 @@
  */
 
 const ReactionRole = require('../../models/ReactionRole');
-const { checkPermission } = require('../../utils/permissions');
+const { requireTier } = require('../../utils/permissions');
 const { EmbedBuilder } = require('discord.js');
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -21,6 +21,7 @@ const { EmbedBuilder } = require('discord.js');
  *  Unicode: 👍                         → we store the literal character(s)
  */
 function normaliseEmoji(raw) {
+  if (!raw) return '';
   const customMatch = raw.match(/^<a?:[^:]+:(\d+)>$/);
   if (customMatch) return customMatch[1];
   return raw.trim();
@@ -31,15 +32,22 @@ function reactableEmoji(stored, guild) {
   // If it's all digits it's a custom emoji id — find it in the guild cache
   if (/^\d+$/.test(stored)) {
     const found = guild.emojis.cache.get(stored);
-    return found ? found.identifier : stored; // identifier = name%3Aid url-encoded
+    return found ? found.toString() : stored;
   }
   return stored; // unicode
 }
 
 /** Resolve a role from a mention or id string */
 function resolveRole(guild, str) {
+  if (!str) return null;
   const id = str.replace(/\D/g, '');
   return guild.roles.cache.get(id) || null;
+}
+
+async function fetchPanelMessage(guild, channelId, messageId) {
+  const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
+  if (!channel?.messages) return null;
+  return channel.messages.fetch(messageId).catch(() => null);
 }
 
 // ─── sub-commands ─────────────────────────────────────────────────────────────
@@ -135,8 +143,8 @@ async function handleAdd(message, args) {
 
   // React on the actual message so users can see the button
   try {
-    const channel = message.guild.channels.cache.get(doc.channelId);
-    const target = await channel.messages.fetch(messageId);
+    const target = await fetchPanelMessage(message.guild, doc.channelId, messageId);
+    if (!target) throw new Error('Panel message not found');
     await target.react(reactableEmoji(emoji, message.guild));
   } catch (err) {
     console.error('RR react error:', err);
@@ -165,9 +173,8 @@ async function handleRemove(message, args) {
 
   // Remove the bot's reaction
   try {
-    const channel = message.guild.channels.cache.get(doc.channelId);
-    const target = await channel.messages.fetch(messageId);
-    const re = reactableEmoji(emoji, message.guild);
+    const target = await fetchPanelMessage(message.guild, doc.channelId, messageId);
+    if (!target) throw new Error('Panel message not found');
     const reaction = target.reactions.cache.find(
       r => r.emoji.id === emoji || r.emoji.name === emoji
     );
@@ -221,8 +228,8 @@ async function handleClear(message, args) {
 
   // Remove all bot reactions
   try {
-    const channel = message.guild.channels.cache.get(doc.channelId);
-    const target = await channel.messages.fetch(messageId);
+    const target = await fetchPanelMessage(message.guild, doc.channelId, messageId);
+    if (!target) throw new Error('Panel message not found');
     await target.reactions.removeAll();
   } catch (err) {
     console.error('RR clear reactions error:', err);
@@ -241,9 +248,8 @@ async function handleDelete(message, args) {
   if (!doc) return message.reply('❌ No panel found for that message ID.');
 
   try {
-    const channel = message.guild.channels.cache.get(doc.channelId);
-    const target = await channel.messages.fetch(messageId);
-    await target.reactions.removeAll();
+    const target = await fetchPanelMessage(message.guild, doc.channelId, messageId);
+    if (target) await target.reactions.removeAll();
   } catch (_) {}
 
   return message.reply(`✅ Reaction-role panel \`${messageId}\` deleted from the database.`);
@@ -259,7 +265,7 @@ module.exports = {
   usage: ',rr <setup|create|add|remove|list|clear|delete> [args]',
 
   async execute(message, args, client, config) {
-    if (!checkPermission(message.member, config, 'v2'))
+    if (!await requireTier(message.member, 'v2', config))
       return message.reply('❌ You need **V2** or higher to manage reaction roles.');
 
     const sub = (args[0] || '').toLowerCase();

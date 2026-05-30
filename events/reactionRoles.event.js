@@ -1,52 +1,48 @@
-/**
- * reactionRoles.js  —  event handler file
- * 
- * Handles both messageReactionAdd and messageReactionRemove.
- * Drop this file into your events/ folder.
- * Your eventHandler must load it — it exports an array of two event objects.
- */
-
 const ReactionRole = require('../models/ReactionRole');
 
-/** Resolve partial structures that Discord.js gives us for uncached messages */
 async function resolveReaction(reaction, user) {
   if (reaction.partial) {
-    try { await reaction.fetch(); } catch { return null; }
+    try { await reaction.fetch(); } catch { return false; }
   }
   if (user.partial) {
-    try { await user.fetch(); } catch { return null; }
+    try { await user.fetch(); } catch { return false; }
   }
   return true;
 }
 
-/** Given a raw emoji object, return the stored key (id for custom, name for unicode) */
 function emojiKey(emoji) {
   return emoji.id || emoji.name;
 }
 
-async function handleReactionAdd(reaction, user) {
-  if (user.bot) return;
-  if (!reaction.message.guild) return; // DM — skip
-  if (!await resolveReaction(reaction, user)) return;
-
-  const { guild } = reaction.message;
+async function findEntry(reaction, user) {
+  if (user.bot) return null;
+  if (!await resolveReaction(reaction, user)) return null;
+  if (!reaction.message.guild) return null;
 
   const doc = await ReactionRole.findOne({
-    guildId: guild.id,
+    guildId: reaction.message.guild.id,
     messageId: reaction.message.id,
-  });
-  if (!doc || !doc.entries.length) return;
+  }).lean();
+
+  if (!doc?.entries?.length) return null;
 
   const key = emojiKey(reaction.emoji);
-  const entry = doc.entries.find(e => e.emoji === key);
-  if (!entry) return;
+  const entry = doc.entries.find(item => item.emoji === key);
+  if (!entry) return null;
+
+  return { guild: reaction.message.guild, entry };
+}
+
+async function handleReactionAdd(reaction, user) {
+  const found = await findEntry(reaction, user);
+  if (!found) return;
+
+  const { guild, entry } = found;
 
   try {
     const member = await guild.members.fetch(user.id);
     const role = guild.roles.cache.get(entry.roleId);
-    if (!role) return;
-
-    // Check bot hierarchy before attempting
+    if (!role || member.roles.cache.has(role.id)) return;
     if (role.position >= guild.members.me.roles.highest.position) return;
 
     await member.roles.add(role, 'Reaction role');
@@ -56,27 +52,15 @@ async function handleReactionAdd(reaction, user) {
 }
 
 async function handleReactionRemove(reaction, user) {
-  if (user.bot) return;
-  if (!reaction.message.guild) return;
-  if (!await resolveReaction(reaction, user)) return;
+  const found = await findEntry(reaction, user);
+  if (!found) return;
 
-  const { guild } = reaction.message;
-
-  const doc = await ReactionRole.findOne({
-    guildId: guild.id,
-    messageId: reaction.message.id,
-  });
-  if (!doc || !doc.entries.length) return;
-
-  const key = emojiKey(reaction.emoji);
-  const entry = doc.entries.find(e => e.emoji === key);
-  if (!entry) return;
+  const { guild, entry } = found;
 
   try {
     const member = await guild.members.fetch(user.id);
     const role = guild.roles.cache.get(entry.roleId);
-    if (!role) return;
-
+    if (!role || !member.roles.cache.has(role.id)) return;
     if (role.position >= guild.members.me.roles.highest.position) return;
 
     await member.roles.remove(role, 'Reaction role removed');
@@ -85,7 +69,6 @@ async function handleReactionRemove(reaction, user) {
   }
 }
 
-// Export array so your eventHandler can load both from one file
 module.exports = [
   {
     name: 'messageReactionAdd',

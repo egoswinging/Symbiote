@@ -32,6 +32,8 @@ const PUBLIC_COMMANDS = new Set([
   'vanish', 'unvanish', 'restorevanish', 'vanishlist', 'setupvanish',
   'timeout', 'mute', 'to', 'untimeout', 'unmute', 'uto',
   'automod', 'am',
+  'rr', 'reactionrole', 'reactionroles',
+  'question', 'q',
   'close', 'closeremove',
 ]);
 
@@ -50,21 +52,33 @@ function normalizeAutomodText(value) {
     .trim();
 }
 
-function compactAutomodText(value) {
-  return normalizeAutomodText(value).replace(/[\s._\-*`~|/\\()[\]{}<>'":;,!?\u00a0]+/g, '');
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function automodMatches(content, blockedValue) {
+function automodWordMatches(content, blockedValue) {
   const blocked = normalizeAutomodText(blockedValue);
   if (!blocked) return false;
 
   const normalizedContent = normalizeAutomodText(content);
-  if (normalizedContent.includes(blocked)) return true;
+  if (/\s/.test(blocked)) return normalizedContent.includes(blocked);
 
-  const compactBlocked = compactAutomodText(blocked);
-  if (compactBlocked.length < 2) return false;
+  const wordBoundary = `(^|[^\\p{L}\\p{N}_])${escapeRegex(blocked)}($|[^\\p{L}\\p{N}_])`;
+  if (new RegExp(wordBoundary, 'iu').test(normalizedContent)) return true;
 
-  return compactAutomodText(normalizedContent).includes(compactBlocked);
+  if (blocked.length < 4) return false;
+
+  const separators = String.raw`[\s._\-*` + "`" + String.raw`~|/\\()[\]{}<>'":;,!?\u00a0]*`;
+  const looseLetters = Array.from(blocked).map(escapeRegex).join(separators);
+  const looseBoundary = `(^|[^\\p{L}\\p{N}_])${looseLetters}($|[^\\p{L}\\p{N}_])`;
+  return new RegExp(looseBoundary, 'iu').test(normalizedContent);
+}
+
+function automodLinkMatches(content, blockedValue) {
+  const blocked = normalizeAutomodText(blockedValue);
+  if (!blocked) return false;
+
+  return normalizeAutomodText(content).includes(blocked);
 }
 
 module.exports = {
@@ -94,7 +108,7 @@ module.exports = {
       // Check banned words — matches anywhere in the message (e.g. "Yo Negus" triggers "negus")
       for (const word of config.automod.words || []) {
         const w = normalizeAutomodText(word);
-        if (automodMatches(message.content, w)) {
+        if (automodWordMatches(message.content, w)) {
           triggered = `Banned word: \`${w}\``;
           break;
         }
@@ -104,7 +118,7 @@ module.exports = {
       if (!triggered) {
         for (const link of config.automod.links || []) {
           const l = normalizeAutomodText(link);
-          if (automodMatches(message.content, l)) {
+          if (automodLinkMatches(message.content, l)) {
             triggered = `Banned link: \`${l}\``;
             break;
           }

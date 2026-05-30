@@ -71,6 +71,8 @@ const COMMAND_DATA = {
   utility: [
     { name: 'autoresponder', desc: 'Manage auto-responders (exact trigger match only)',         example: '.ar add hello | Hello there!\n.ar remove hello\n.ar list' },
     { name: 'automod',       desc: 'Manage the word/link automod filter',                       example: '.automod add word badword\n.automod add link spam.com\n.automod enable\n.automod setchannel #logs' },
+    { name: 'question',      desc: 'Ask what command to use in plain English',                   example: '.question how do I ban people?\n.question what removes a role from everybody?' },
+    { name: 'rr',            desc: 'Create and manage reaction-role panels',                     example: '.rr create #roles Roles Pick your roles\n.rr add 123456789012345678 yes @Member' },
     { name: 'allow',         desc: 'Allow a role to @everyone ping (max 3x per 5min, then timeout)', example: '.allow @Announcements' },
     { name: 'setuplogger',   desc: 'Create two log channels: mod-logs (commands/bans) + dele-edit (deleted/edited messages)',                           example: '.setuplogger' },
     { name: 'setupwelcome',  desc: 'Set a welcome/leave channel (separate from mod logs)',      example: '.setupwelcome #welcome\n.setupwelcome (auto-creates)' },
