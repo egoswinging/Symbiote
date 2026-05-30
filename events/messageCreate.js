@@ -33,7 +33,6 @@ const PUBLIC_COMMANDS = new Set([
   'timeout', 'mute', 'to', 'untimeout', 'unmute', 'uto',
   'automod', 'am',
   'rr', 'reactionrole', 'reactionroles',
-  'question', 'q',
   'close', 'closeremove',
 ]);
 

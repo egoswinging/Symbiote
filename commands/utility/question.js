@@ -2,6 +2,85 @@ const { EmbedBuilder } = require('discord.js');
 
 const PREFIX = process.env.PREFIX || '.';
 
+const COMMAND_DETAILS = {
+  wipe: {
+    summary: 'Bans a user from the server and stores them in the wipe list.',
+    usage: '.wipe @user reason',
+  },
+  unwipe: {
+    summary: 'Unbans a wiped user by their Discord user ID.',
+    usage: '.unwipe 123456789012345678',
+  },
+  unwipeall: {
+    summary: 'Unbans everyone currently tracked by the wipe list.',
+    usage: '.unwipeall',
+  },
+  vanish: {
+    summary: 'Removes a member roles and applies the vanish role.',
+    usage: '.vanish @user reason',
+  },
+  restorevanish: {
+    summary: 'Gives a vanished member their saved roles back.',
+    usage: '.restorevanish @user',
+  },
+  restore: {
+    summary: 'Restores saved roles to a member.',
+    usage: '.restore @user',
+  },
+  timeout: {
+    summary: 'Times a member out for a duration like 10m, 2h, or 1d.',
+    usage: '.timeout @user 30m reason',
+  },
+  untimeout: {
+    summary: 'Removes a timeout from a member.',
+    usage: '.untimeout @user reason',
+  },
+  kick: {
+    summary: 'Kicks a member without banning them.',
+    usage: '.kick @user reason',
+  },
+  removeall: {
+    summary: 'Removes one role from every member who has it.',
+    usage: '.removeall @role',
+  },
+  role: {
+    summary: 'Gives, removes, or creates roles.',
+    usage: '.role give @user @role',
+  },
+  automod: {
+    summary: 'Manages blocked words, blocked links, automod logs, and automod on/off.',
+    usage: '.automod add word badword',
+  },
+  rr: {
+    summary: 'Creates and manages reaction-role panels.',
+    usage: '.rr create #roles Roles Pick your roles',
+  },
+  question: {
+    summary: 'Answers private command questions and explains what commands do.',
+    usage: '.question what does wipe do?',
+  },
+  s: {
+    summary: 'Shows a recently deleted message in the current channel.',
+    usage: '.s',
+  },
+  cs: {
+    summary: 'Clears the saved snipe for the current channel.',
+    usage: '.cs',
+  },
+  saveserver: {
+    summary: 'Saves the current server layout as a named backup.',
+    usage: '.saveserver name',
+  },
+  serverload: {
+    summary: 'Wipes the server layout and restores a saved server backup.',
+    usage: '.serverload name',
+  },
+  antinuke: {
+    summary: 'Configures anti-nuke triggers like mass ban, kick, channel delete, role delete, and spam.',
+    usage: '.an config',
+  },
+};
+
 const ANSWERS = [
   {
     terms: ['ban', 'wipe', 'remove from server'],
@@ -95,6 +174,39 @@ function scoreQuestion(input, answer) {
   return score;
 }
 
+function cleanCommandName(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(new RegExp(`^\\${PREFIX}`), '')
+    .replace(/[^a-z0-9]/g, '');
+}
+
+function findAskedCommand(input, client) {
+  const words = input
+    .toLowerCase()
+    .split(/[^a-z0-9.]+/)
+    .map(cleanCommandName)
+    .filter(Boolean);
+
+  const asked = words.find(word => client.commands.has(word) || COMMAND_DETAILS[word]);
+  if (asked) return client.commands.get(asked)?.name || asked;
+
+  return null;
+}
+
+function commandDetails(commandName, client) {
+  const command = client.commands.get(commandName);
+  const canonical = command?.name || commandName;
+  const detail = COMMAND_DETAILS[canonical] || COMMAND_DETAILS[commandName] || {};
+
+  return {
+    name: canonical,
+    summary: detail.summary || command?.description || 'No description saved for this command yet.',
+    usage: detail.usage || command?.usage || `${PREFIX}${canonical}`,
+    aliases: command?.aliases || [],
+  };
+}
+
 module.exports = {
   name: 'question',
   aliases: ['q'],
@@ -106,7 +218,26 @@ module.exports = {
   async execute(message, args, client) {
     const question = args.join(' ').trim();
     if (!question) {
-      return message.reply(`Ask me what you want to do, like \`${PREFIX}question how do I ban people?\``);
+      return message.reply(`Ask me what you want to do, like \`${PREFIX}question how do I ban people?\` or \`${PREFIX}question what does wipe do?\``);
+    }
+
+    const askedCommand = findAskedCommand(question, client);
+    if (askedCommand && /\b(what|does|do|explain|mean|usage|how)\b/i.test(question)) {
+      const detail = commandDetails(askedCommand, client);
+      const embed = new EmbedBuilder()
+        .setColor(0x5865F2)
+        .setTitle(`Command: ${PREFIX}${detail.name}`)
+        .setDescription(detail.summary)
+        .addFields(
+          { name: 'Usage', value: `\`${detail.usage}\``, inline: false },
+          { name: 'More info', value: `\`${PREFIX}help ${detail.name}\``, inline: true },
+        );
+
+      if (detail.aliases.length) {
+        embed.addFields({ name: 'Aliases', value: detail.aliases.map(alias => `\`${PREFIX}${alias}\``).join(', '), inline: false });
+      }
+
+      return message.reply({ embeds: [embed] });
     }
 
     const best = ANSWERS
