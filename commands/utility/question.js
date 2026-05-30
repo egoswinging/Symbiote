@@ -1,6 +1,8 @@
 const { EmbedBuilder } = require('discord.js');
 
 const PREFIX = process.env.PREFIX || '.';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+const GEMINI_TIMEOUT_MS = 8000;
 
 const COMMAND_DETAILS = {
   wipe: {
@@ -83,6 +85,14 @@ const COMMAND_DETAILS = {
     summary: 'Configures anti-nuke triggers like mass ban, kick, channel delete, role delete, and spam.',
     usage: '.an config',
   },
+  nuke: {
+    summary: 'Clones the current channel and deletes the old one, basically remaking the channel.',
+    usage: '.nuke',
+  },
+  clean: {
+    summary: 'Toggles clean mode so normal messages in that channel get auto-deleted.',
+    usage: '.clean',
+  },
 };
 
 const ANSWERS = [
@@ -105,6 +115,11 @@ const ANSWERS = [
     terms: ['kick'],
     command: 'kick',
     answer: 'Use `.kick @user reason` to kick someone without banning them.',
+  },
+  {
+    terms: ['delete channel and remake', 'deletes and remakes a channel', 'clone channel', 'remake channel', 'nuke channel', 'reset channel'],
+    command: 'nuke',
+    answer: 'Use `.nuke` in the channel. It clones the current channel and deletes the old one.',
   },
   {
     terms: ['timeout', 'mute', 'shut up'],
@@ -225,6 +240,127 @@ function commandDetails(commandName, client) {
   };
 }
 
+function uniqueCommands(client) {
+  const seen = new Set();
+  const commands = [];
+
+  for (const [key, command] of client.commands) {
+    const name = command?.name || key;
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+
+    const detail = COMMAND_DETAILS[name] || {};
+    commands.push({
+      name,
+      aliases: command?.aliases || [],
+      summary: detail.summary || command?.description || 'No description saved.',
+      usage: detail.usage || command?.usage || `${PREFIX}${name}`,
+    });
+  }
+
+  for (const [name, detail] of Object.entries(COMMAND_DETAILS)) {
+    if (seen.has(name)) continue;
+    commands.push({ name, aliases: [], summary: detail.summary, usage: detail.usage });
+  }
+
+  return commands;
+}
+
+function extractJson(text) {
+  const cleaned = String(text || '').replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
+  const match = cleaned.match(/\{[\s\S]*\}/);
+  if (!match) return null;
+
+  try {
+    return JSON.parse(match[0]);
+  } catch {
+    return null;
+  }
+}
+
+async function askGemini(question, client) {
+  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  if (!apiKey) return null;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+
+  const commands = uniqueCommands(client);
+  const prompt = [
+    'You are a Discord bot command helper for the bot named Symbiote.',
+    'Answer the user by choosing the single best command from the provided command list.',
+    'Do not invent commands. If nothing fits, use command null.',
+    'Return ONLY valid JSON with: command, answer, usage.',
+    'Keep the answer short and practical.',
+    '',
+    `Prefix: ${PREFIX}`,
+    `Commands: ${JSON.stringify(commands)}`,
+    `User question: ${question}`,
+  ].join('\n');
+
+  try {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(GEMINI_MODEL)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.1,
+          maxOutputTokens: 220,
+          responseMimeType: 'application/json',
+        },
+      }),
+    });
+
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    const text = data?.candidates?.[0]?.content?.parts?.map(part => part.text || '').join('\n');
+    const parsed = extractJson(text);
+    if (!parsed?.answer) return null;
+
+    const commandName = parsed.command ? cleanCommandName(parsed.command) : null;
+    if (commandName && !client.commands.has(commandName) && !COMMAND_DETAILS[commandName]) return null;
+
+    return {
+      command: commandName,
+      answer: String(parsed.answer).slice(0, 900),
+      usage: parsed.usage ? String(parsed.usage).slice(0, 200) : null,
+    };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function buildAnswerEmbed(title, answer, commandName, client, usage = null) {
+  const command = commandName ? client.commands.get(commandName) : null;
+  const embed = new EmbedBuilder()
+    .setColor(0x5865F2)
+    .setTitle(title)
+    .setDescription(answer);
+
+  if (commandName) {
+    embed.addFields(
+      { name: 'Best match', value: `\`${PREFIX}${commandName}\``, inline: true },
+      { name: 'More info', value: `\`${PREFIX}help ${commandName}\``, inline: true },
+    );
+  }
+
+  if (usage) {
+    embed.addFields({ name: 'Usage', value: `\`${usage}\``, inline: false });
+  }
+
+  if (command?.aliases?.length) {
+    embed.addFields({ name: 'Aliases', value: command.aliases.map(alias => `\`${PREFIX}${alias}\``).join(', '), inline: false });
+  }
+
+  return embed;
+}
+
 module.exports = {
   name: 'question',
   aliases: ['q'],
@@ -256,6 +392,13 @@ module.exports = {
       }
 
       return message.reply({ embeds: [embed] });
+    }
+
+    const aiAnswer = await askGemini(question, client);
+    if (aiAnswer) {
+      return message.reply({
+        embeds: [buildAnswerEmbed('Command Finder', aiAnswer.answer, aiAnswer.command, client, aiAnswer.usage)],
+      });
     }
 
     const best = ANSWERS
