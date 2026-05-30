@@ -94,6 +94,14 @@ const COMMAND_DETAILS = {
     summary: 'Toggles clean mode so normal messages in that channel get auto-deleted.',
     usage: '.clean',
   },
+  off: {
+    summary: 'Turns off admin/mod permissions from the configured v1/v2/v3 roles and saves a snapshot so `.on` can restore them later.',
+    usage: '.off',
+  },
+  on: {
+    summary: 'Restores the saved v1/v2/v3 role permissions after `.off` was used.',
+    usage: '.on',
+  },
 };
 
 const ANSWERS = [
@@ -121,6 +129,16 @@ const ANSWERS = [
     terms: ['delete channel and remake', 'deletes and remakes a channel', 'clone channel', 'remake channel', 'nuke channel', 'reset channel'],
     command: 'nuke',
     answer: 'Use `.nuke` in the channel. It clones the current channel and deletes the old one.',
+  },
+  {
+    terms: ['turn off admin perms', 'turn off admin permissions', 'disable admin perms', 'disable admin permissions', 'remove admin perms', 'remove admin permissions', 'turn off perms', 'strip admin from roles'],
+    command: 'off',
+    answer: 'Use `.off`. It removes admin/mod permissions from the configured v1/v2/v3 roles and saves a snapshot so `.on` can restore them.',
+  },
+  {
+    terms: ['turn on admin perms', 'restore admin perms', 'restore permissions', 'turn permissions back on', 'turn admin back on'],
+    command: 'on',
+    answer: 'Use `.on`. It restores the saved permissions that `.off` removed.',
   },
   {
     terms: ['timeout', 'mute', 'shut up'],
@@ -450,16 +468,34 @@ module.exports = {
       return message.reply({ embeds: [embed] });
     }
 
+    const best = ANSWERS
+      .map(answer => ({ ...answer, score: scoreQuestion(question, answer) }))
+      .sort((a, b) => b.score - a.score)[0];
+
+    if (best?.score >= 18) {
+      const command = client.commands.get(best.command);
+      const embed = new EmbedBuilder()
+        .setColor(0x5865F2)
+        .setTitle('Command Finder')
+        .setDescription(best.answer)
+        .addFields(
+          { name: 'Best match', value: `\`${PREFIX}${best.command}\``, inline: true },
+          { name: 'More info', value: `\`${PREFIX}help ${best.command}\``, inline: true },
+        );
+
+      if (command?.aliases?.length) {
+        embed.addFields({ name: 'Aliases', value: command.aliases.map(alias => `\`${PREFIX}${alias}\``).join(', '), inline: false });
+      }
+
+      return message.reply({ embeds: [embed] });
+    }
+
     const aiAnswer = await askGemini(question, client);
     if (aiAnswer) {
       return message.reply({
         embeds: [buildAnswerEmbed('Command Finder', aiAnswer.answer, aiAnswer.command, client, aiAnswer.usage)],
       });
     }
-
-    const best = ANSWERS
-      .map(answer => ({ ...answer, score: scoreQuestion(question, answer) }))
-      .sort((a, b) => b.score - a.score)[0];
 
     if (!best || best.score <= 0) {
       return message.reply(`I could not match that yet. Try \`${PREFIX}help\` or \`${PREFIX}help <command>\`.`);
