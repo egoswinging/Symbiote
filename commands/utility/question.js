@@ -3,6 +3,7 @@ const { EmbedBuilder } = require('discord.js');
 const PREFIX = process.env.PREFIX || '.';
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
 const GEMINI_TIMEOUT_MS = 8000;
+const GEMINI_FALLBACK_MODELS = ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-1.5-flash'];
 
 const COMMAND_DETAILS = {
   wipe: {
@@ -282,9 +283,6 @@ async function askGemini(question, client) {
   const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
   if (!apiKey) return null;
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
-
   const commands = uniqueCommands(client);
   const prompt = [
     'You are a Discord bot command helper for the bot named Symbiote.',
@@ -298,42 +296,90 @@ async function askGemini(question, client) {
     `User question: ${question}`,
   ].join('\n');
 
+  const models = [...new Set([GEMINI_MODEL, ...GEMINI_FALLBACK_MODELS].filter(Boolean))];
+
+  for (const model of models) {
+    for (const jsonMode of [true, false]) {
+      const result = await callGemini(apiKey, model, prompt, jsonMode);
+      if (!result.ok) {
+        console.warn(`[question/gemini] ${model} failed: ${result.status || ''} ${result.error || ''}`.trim());
+        continue;
+      }
+
+      const parsed = extractJson(result.text);
+      if (!parsed?.answer) continue;
+
+      const commandName = parsed.command ? cleanCommandName(parsed.command) : null;
+      if (commandName && !client.commands.has(commandName) && !COMMAND_DETAILS[commandName]) continue;
+
+      return {
+        command: commandName,
+        answer: String(parsed.answer).slice(0, 900),
+        usage: parsed.usage ? String(parsed.usage).slice(0, 200) : null,
+      };
+    }
+  }
+
+  return null;
+}
+
+async function callGemini(apiKey, model, prompt, jsonMode = true) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(GEMINI_MODEL)}:generateContent?key=${encodeURIComponent(apiKey)}`;
-    const res = await fetch(url, {
+    const generationConfig = {
+      temperature: 0.1,
+      maxOutputTokens: 220,
+    };
+    if (jsonMode) generationConfig.responseMimeType = 'application/json';
+
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey,
+      },
       signal: controller.signal,
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.1,
-          maxOutputTokens: 220,
-          responseMimeType: 'application/json',
-        },
+        generationConfig,
       }),
     });
 
-    if (!res.ok) return null;
+    const body = await res.text();
+    if (!res.ok) {
+      return { ok: false, status: res.status, error: body.slice(0, 240) };
+    }
 
-    const data = await res.json();
+    const data = JSON.parse(body);
     const text = data?.candidates?.[0]?.content?.parts?.map(part => part.text || '').join('\n');
-    const parsed = extractJson(text);
-    if (!parsed?.answer) return null;
-
-    const commandName = parsed.command ? cleanCommandName(parsed.command) : null;
-    if (commandName && !client.commands.has(commandName) && !COMMAND_DETAILS[commandName]) return null;
-
-    return {
-      command: commandName,
-      answer: String(parsed.answer).slice(0, 900),
-      usage: parsed.usage ? String(parsed.usage).slice(0, 200) : null,
-    };
-  } catch {
-    return null;
+    return { ok: Boolean(text), text, model };
+  } catch (err) {
+    return { ok: false, error: err.message };
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function geminiStatus() {
+  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  if (!apiKey) {
+    return { ok: false, message: '`GEMINI_API_KEY` is not loaded in this Railway service.' };
+  }
+
+  const models = [...new Set([GEMINI_MODEL, ...GEMINI_FALLBACK_MODELS].filter(Boolean))];
+  for (const model of models) {
+    const result = await callGemini(
+      apiKey,
+      model,
+      'Return ONLY this JSON: {"command":"question","answer":"Gemini is connected.","usage":".question how do I ban someone"}',
+      true,
+    );
+    if (result.ok) return { ok: true, message: `Gemini is connected with \`${model}\`.` };
+  }
+
+  return { ok: false, message: 'Gemini key is loaded, but Google rejected the test. Check Railway logs for `[question/gemini]` errors.' };
 }
 
 function buildAnswerEmbed(title, answer, commandName, client, usage = null) {
@@ -373,6 +419,16 @@ module.exports = {
     const question = args.join(' ').trim();
     if (!question) {
       return message.reply(`Ask me what you want to do, like \`${PREFIX}question how do I ban people?\` or \`${PREFIX}question what does wipe do?\``);
+    }
+
+    if (/^(ai\s*)?status$|^gemini\s*(status|test)$|^ai\s*test$/i.test(question)) {
+      const status = await geminiStatus();
+      return message.reply({
+        embeds: [new EmbedBuilder()
+          .setColor(status.ok ? 0x57F287 : 0xED4245)
+          .setTitle('Question AI Status')
+          .setDescription(status.message)],
+      });
     }
 
     const askedCommand = findAskedCommand(question, client);
