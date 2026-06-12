@@ -15,17 +15,23 @@ module.exports = {
     if (!await requireTier(message.member, 'owner', config))
       return message.reply({ embeds: [errorEmbed('Only **owners** can manage automod.')] });
 
+    const updateConfig = (update) => GuildConfig.updateOne(
+      { guildId: message.guild.id },
+      update,
+      { upsert: true }
+    );
+
     const sub = args[0]?.toLowerCase();
 
     // ── enable ────────────────────────────────────────────────────────────────
     if (sub === 'enable') {
-      await GuildConfig.updateOne({ guildId: message.guild.id }, { 'automod.enabled': true });
+      await updateConfig({ 'automod.enabled': true });
       return message.reply({ embeds: [successEmbed('Automod **enabled**.')] });
     }
 
     // ── disable ───────────────────────────────────────────────────────────────
     if (sub === 'disable') {
-      await GuildConfig.updateOne({ guildId: message.guild.id }, { 'automod.enabled': false });
+      await updateConfig({ 'automod.enabled': false });
       return message.reply({ embeds: [successEmbed('Automod **disabled**.')] });
     }
 
@@ -33,7 +39,7 @@ module.exports = {
     if (sub === 'setchannel') {
       const ch = message.mentions.channels.first() || message.guild.channels.cache.get(args[1]);
       if (!ch) return message.reply({ embeds: [errorEmbed('Mention a channel or provide a channel ID.')] });
-      await GuildConfig.updateOne({ guildId: message.guild.id }, { 'automod.channel': ch.id });
+      await updateConfig({ 'automod.channel': ch.id });
       return message.reply({ embeds: [successEmbed(`Automod logs will be sent to ${ch}.`)] });
     }
 
@@ -51,10 +57,7 @@ module.exports = {
       if (list?.includes(value))
         return message.reply({ embeds: [errorEmbed(`\`${value}\` is already in the ${type} filter.`)] });
 
-      await GuildConfig.updateOne(
-        { guildId: message.guild.id },
-        { $push: { [field]: value }, $set: { 'automod.enabled': true } }
-      );
+      await updateConfig({ $addToSet: { [field]: value }, $set: { 'automod.enabled': true } });
       return message.reply({ embeds: [successEmbed(`Added \`${value}\` to the **${type}** filter and enabled automod.`)] });
     }
 
@@ -67,7 +70,7 @@ module.exports = {
         return message.reply({ embeds: [errorEmbed('Usage: `.automod remove <word|link> <value>`')] });
 
       const field = type === 'word' ? 'automod.words' : 'automod.links';
-      await GuildConfig.updateOne({ guildId: message.guild.id }, { $pull: { [field]: value } });
+      await updateConfig({ $pull: { [field]: value } });
       return message.reply({ embeds: [successEmbed(`Removed \`${value}\` from the **${type}** filter.`)] });
     }
 

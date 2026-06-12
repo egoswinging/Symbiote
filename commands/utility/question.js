@@ -66,6 +66,10 @@ const COMMAND_DETAILS = {
     summary: 'Answers private command questions and explains what commands do.',
     usage: '.question what does wipe do?',
   },
+  questionlist: {
+    summary: 'Shows example questions people can ask the bot, with the command answer each one maps to.',
+    usage: '.questionlist',
+  },
   s: {
     summary: 'Shows a recently deleted message in the current channel.',
     usage: '.s',
@@ -111,7 +115,7 @@ const ANSWERS = [
     answer: 'Use `.wipe @user reason` to ban someone. Use `.unwipe userId` to unban them.',
   },
   {
-    terms: ['auto reban', 'auto-reban', 'auto rebans', 'auto-rebans', 'rebans if they rejoin', 'rejoin ban', 'perma ban', 'permaban', 'click'],
+    terms: ['auto reban', 'auto-reban', 'auto rebans', 'auto-rebans', 'automatically reban', 'automatically rebans', 'rebans people', 'rebans if they rejoin', 'rebans when unbanned', 'reban when unbanned', 'reban after unban', 'rejoin ban', 'perma ban', 'permaban', 'click'],
     command: 'click',
     answer: 'Use `.click @user reason`. That is the perma-ban command: if they rejoin, the bot auto-rebans them.',
   },
@@ -200,6 +204,218 @@ const ANSWERS = [
     command: 'antinuke',
     answer: 'Use `.an config` to view settings, `.an set ban ban 3`, `.an set kick ban 3`, and `.an timeout spam 10m`.',
   },
+  {
+    terms: ['what commands can i ask about', 'question list', 'questions list', 'what questions', 'questionlist'],
+    command: 'questionlist',
+    answer: 'Use `.questionlist` to see example questions you can ask and the command answer each one maps to.',
+  },
+  {
+    terms: ['make a sticker', 'image to sticker', 'jpg sticker', 'webp sticker', 'png sticker'],
+    command: 'is',
+    answer: 'Use `.is` with an attached PNG, APNG, JPG, or WEBP image. The bot will ask for the sticker name and a related emoji tag.',
+  },
+  {
+    terms: ['steal sticker', 'add sticker from url', 'copy sticker'],
+    command: 'swipes',
+    answer: 'Use `.swipes <sticker url>` or attach an image with `.swipes`. The bot will ask for a name and emoji tag.',
+  },
+  {
+    terms: ['make emoji', 'image to emoji', 'add emoji', 'turn image into emoji'],
+    command: 'ie',
+    answer: 'Use `.ie` with an attached image or image URL. The bot will ask what to name the emoji.',
+  },
+  {
+    terms: ['steal emoji', 'copy emoji', 'swipe emoji'],
+    command: 'swipee',
+    answer: 'Use `.swipee <custom emoji>` to copy a custom emoji into this server.',
+  },
+  {
+    terms: ['delete messages', 'purge messages', 'clear messages', 'bulk delete'],
+    command: 'c',
+    answer: 'Use `.c 50` to delete up to 100 recent messages. Pinned messages are skipped.',
+  },
+  {
+    terms: ['auto delete channel', 'clean channel', 'delete normal messages'],
+    command: 'clean',
+    answer: 'Use `.clean` in a channel to toggle clean mode. Normal messages get deleted while commands still work.',
+  },
+  {
+    terms: ['auto delete user', 'shush user', 'delete all user messages'],
+    command: 'shush',
+    answer: 'Use `.shush @user` to auto-delete all future messages from that user. Use `.unshush @user` to stop it.',
+  },
+  {
+    terms: ['blacklist user', 'block bot access', 'stop using bot'],
+    command: 'blacklist',
+    answer: 'Use `.blacklist @user` to stop someone from using the bot. Use `.bllist` to view blacklisted users.',
+  },
+  {
+    terms: ['who is in role', 'members with role', 'list role members'],
+    command: 'inrole',
+    answer: 'Use `.inrole @role` to show all members who have that role.',
+  },
+  {
+    terms: ['list roles', 'show roles', 'server roles'],
+    command: 'roles',
+    answer: 'Use `.roles` to show the server role list.',
+  },
+  {
+    terms: ['promote user', 'promotion ladder', 'move rank up'],
+    command: 'pr',
+    answer: 'Use `.pr @user 1` to promote someone one step up the configured promotion ladder.',
+  },
+  {
+    terms: ['demote user', 'move rank down'],
+    command: 'dem',
+    answer: 'Use `.dem @user 1` to demote someone one step down the configured promotion ladder.',
+  },
+  {
+    terms: ['setup promotions', 'promotion setup', 'rank ladder setup'],
+    command: 'prsetup',
+    answer: 'Use `.prsetup add @Role` to build the promotion ladder, `.prsetup protect @Role` to protect roles, and `.prsetup list` to view it.',
+  },
+  {
+    terms: ['set logs', 'setup logs', 'mod logs', 'deleted message logs'],
+    command: 'setuplogger',
+    answer: 'Use `.setuplogger` to create the mod log and deleted/edited message log channels.',
+  },
+  {
+    terms: ['welcome channel', 'leave channel', 'setup welcome'],
+    command: 'setupwelcome',
+    answer: 'Use `.setupwelcome #channel` to set welcome and leave logs, or `.setupwelcome` to auto-create the channel.',
+  },
+  {
+    terms: ['send dm', 'dm everyone', 'dm role', 'message all members'],
+    command: 'dm',
+    answer: 'Use `.dm @user message`, `.dm @role message`, or `.dm everyone message` depending on who should receive it.',
+  },
+  {
+    terms: ['force nickname', 'force nick', 'lock nickname'],
+    command: 'forcenick',
+    answer: 'Use `.forcenick @user nickname` to force a nickname, or `.forcenick @user` to clear it.',
+  },
+  {
+    terms: ['allow images', 'image perms', 'attachment perms'],
+    command: 'pic',
+    answer: 'Use `.pic @user` to grant image and attachment permissions in the current channel.',
+  },
+  {
+    terms: ['drag user', 'move voice user', 'bring to vc'],
+    command: 'drag',
+    answer: 'Use `.drag @user` to move someone into your current voice channel.',
+  },
+  {
+    terms: ['bot avatar', 'change bot avatar', 'set bot pfp'],
+    command: 'setavatar',
+    answer: 'Use `.setavatar` with an attached image to change the bot avatar.',
+  },
+  {
+    terms: ['server icon', 'change server avatar', 'server pfp'],
+    command: 'serverav',
+    answer: 'Use `.serverav` with an attached image to change the server icon.',
+  },
+  {
+    terms: ['server banner', 'change banner'],
+    command: 'serverbanner',
+    answer: 'Use `.serverbanner` with an attached image to change the server banner. The server needs the required boost level.',
+  },
+  {
+    terms: ['bot status', 'change status', 'activity text'],
+    command: 'status',
+    answer: 'Use `.status Watching over the server` to change the bot activity text. Use `.ss online`, `.ss dnd`, or `.ss invisible` for presence.',
+  },
+  {
+    terms: ['user info', 'whois', 'member info'],
+    command: 'ui',
+    answer: 'Use `.ui @user` to show detailed user information.',
+  },
+  {
+    terms: ['server info', 'guild info'],
+    command: 'si',
+    answer: 'Use `.si` to show server information.',
+  },
+  {
+    terms: ['avatar', 'profile picture', 'pfp'],
+    command: 'av',
+    answer: 'Use `.av @user` to show a user avatar.',
+  },
+  {
+    terms: ['banner', 'user banner'],
+    command: 'banner',
+    answer: 'Use `.banner @user` to show a user banner.',
+  },
+  {
+    terms: ['member count', 'members count'],
+    command: 'mc',
+    answer: 'Use `.mc` to show the server member count.',
+  },
+  {
+    terms: ['join to create', 'j2c', 'voice setup'],
+    command: 'setupj2c',
+    answer: 'Use `.setupj2c` to create the join-to-create voice channel system.',
+  },
+  {
+    terms: ['claim voice channel', 'claim vc'],
+    command: 'vclaim',
+    answer: 'Use `.vclaim` to claim a join-to-create voice channel whose owner left.',
+  },
+  {
+    terms: ['lock voice channel', 'lock vc'],
+    command: 'vclock',
+    answer: 'Use `.vclock` to lock your join-to-create voice channel. Use `.vcunlock` to unlock it.',
+  },
+  {
+    terms: ['permit voice user', 'allow voice user', 'let user join vc'],
+    command: 'vcpermit',
+    answer: 'Use `.vcpermit @user` to allow someone into your locked voice channel.',
+  },
+  {
+    terms: ['reject voice user', 'kick from vc', 'block from voice'],
+    command: 'vcreject',
+    answer: 'Use `.vcreject @user` to kick and block someone from your join-to-create voice channel.',
+  },
+];
+
+const QUESTION_CATALOG = [
+  { question: 'How do I ban someone?', command: 'wipe', response: 'Use `.wipe @user reason` to ban someone.' },
+  { question: 'How do I perma-ban someone so they get rebanned?', command: 'click', response: 'Use `.click @user reason`.' },
+  { question: 'How do I unban someone?', command: 'unwipe', response: 'Use `.unwipe userId`, or `.unwipeall` for everyone in the wipe list.' },
+  { question: 'How do I kick someone?', command: 'kick', response: 'Use `.kick @user reason`.' },
+  { question: 'How do I timeout or mute someone?', command: 'timeout', response: 'Use `.timeout @user 30m reason`.' },
+  { question: 'How do I remove a timeout?', command: 'untimeout', response: 'Use `.untimeout @user reason`.' },
+  { question: 'How do I vanish someone?', command: 'vanish', response: 'Use `.vanish @user reason`.' },
+  { question: 'How do I restore vanished roles?', command: 'restorevanish', response: 'Use `.restorevanish @user`.' },
+  { question: 'How do I delete and remake this channel?', command: 'nuke', response: 'Use `.nuke` in the channel.' },
+  { question: 'How do I delete a bunch of messages?', command: 'c', response: 'Use `.c 50` to delete up to 100 recent messages.' },
+  { question: 'How do I auto-delete messages in this channel?', command: 'clean', response: 'Use `.clean` to toggle clean mode.' },
+  { question: 'How do I auto-delete one user messages?', command: 'shush', response: 'Use `.shush @user`, then `.unshush @user` to stop.' },
+  { question: 'How do I block a user from using the bot?', command: 'blacklist', response: 'Use `.blacklist @user`.' },
+  { question: 'How do I give someone a role?', command: 'role', response: 'Use `.role give @user @role`.' },
+  { question: 'How do I remove a role from everyone?', command: 'removeall', response: 'Use `.removeall @role`.' },
+  { question: 'How do I see everyone with a role?', command: 'inrole', response: 'Use `.inrole @role`.' },
+  { question: 'How do I promote someone?', command: 'pr', response: 'Use `.pr @user 1`.' },
+  { question: 'How do I setup the promotion ladder?', command: 'prsetup', response: 'Use `.prsetup add @Role`, `.prsetup protect @Role`, and `.prsetup list`.' },
+  { question: 'How do I add a blocked automod word?', command: 'automod', response: 'Use `.automod add word badword`.' },
+  { question: 'How do I block a link?', command: 'automod', response: 'Use `.automod add link spam.com`.' },
+  { question: 'How do I setup reaction roles?', command: 'rr', response: 'Use `.rr create #channel Title Description`, then `.rr add messageId emoji @role`.' },
+  { question: 'How do I save this server layout?', command: 'saveserver', response: 'Use `.saveserver name`.' },
+  { question: 'How do I load a saved server?', command: 'serverload', response: 'Use `.serverload name`.' },
+  { question: 'How do I setup anti-nuke?', command: 'antinuke', response: 'Use `.an config` and `.an set ban ban 3`.' },
+  { question: 'How do I make a sticker from an image?', command: 'is', response: 'Use `.is` with a PNG, APNG, JPG, or WEBP attachment.' },
+  { question: 'How do I steal a sticker?', command: 'swipes', response: 'Use `.swipes <sticker url>` or attach an image.' },
+  { question: 'How do I make an emoji from an image?', command: 'ie', response: 'Use `.ie` with an image attachment or URL.' },
+  { question: 'How do I steal an emoji?', command: 'swipee', response: 'Use `.swipee <custom emoji>`.' },
+  { question: 'How do I change the bot avatar?', command: 'setavatar', response: 'Use `.setavatar` with an attached image.' },
+  { question: 'How do I change the server icon?', command: 'serverav', response: 'Use `.serverav` with an attached image.' },
+  { question: 'How do I see deleted messages?', command: 's', response: 'Use `.s`, or `.s 2` for an older deleted message.' },
+  { question: 'How do I setup logs?', command: 'setuplogger', response: 'Use `.setuplogger`.' },
+  { question: 'How do I setup welcome messages?', command: 'setupwelcome', response: 'Use `.setupwelcome #channel`.' },
+  { question: 'How do I DM everyone or a role?', command: 'dm', response: 'Use `.dm everyone message` or `.dm @role message`.' },
+  { question: 'How do I see user info?', command: 'ui', response: 'Use `.ui @user`.' },
+  { question: 'How do I see server info?', command: 'si', response: 'Use `.si`.' },
+  { question: 'How do I see an avatar?', command: 'av', response: 'Use `.av @user`.' },
+  { question: 'How do I setup join-to-create voice?', command: 'setupj2c', response: 'Use `.setupj2c`.' },
+  { question: 'How do I lock my voice channel?', command: 'vclock', response: 'Use `.vclock`, then `.vcunlock` to unlock it.' },
 ];
 
 function scoreQuestion(input, answer) {
@@ -425,7 +641,7 @@ function buildAnswerEmbed(title, answer, commandName, client, usage = null) {
   return embed;
 }
 
-module.exports = {
+const question = {
   name: 'question',
   aliases: ['q'],
   category: 'utility',
@@ -518,3 +734,7 @@ module.exports = {
     return message.reply({ embeds: [embed] });
   },
 };
+
+question.questionCatalog = QUESTION_CATALOG;
+
+module.exports = question;

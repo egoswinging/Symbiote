@@ -72,6 +72,7 @@ const COMMAND_DATA = {
     { name: 'autoresponder', desc: 'Manage auto-responders (exact trigger match only)',         example: '.ar add hello | Hello there!\n.ar remove hello\n.ar list' },
     { name: 'automod',       desc: 'Manage the word/link automod filter',                       example: '.automod add word badword\n.automod add link spam.com\n.automod enable\n.automod setchannel #logs' },
     { name: 'question',      desc: 'Ask what command to use in plain English',                   example: '.question how do I ban people?\n.question what removes a role from everybody?' },
+    { name: 'questionlist',  desc: 'Show example questions the bot can answer about commands',   example: '.questionlist\n.questionlist 2' },
     { name: 'rr',            desc: 'Create and manage reaction-role panels',                     example: '.rr create #roles Roles Pick your roles\n.rr add 123456789012345678 yes @Member' },
     { name: 'allow',         desc: 'Allow a role to @everyone ping (max 3x per 5min, then timeout)', example: '.allow @Announcements' },
     { name: 'setuplogger',   desc: 'Create two log channels: mod-logs (commands/bans) + dele-edit (deleted/edited messages)',                           example: '.setuplogger' },
@@ -97,7 +98,7 @@ const COMMAND_DATA = {
     { name: 'swipee',       desc: 'Steal a custom emoji into this server (prompts for name)',         example: '.swipee :coolEmoji:' },
     { name: 'ie',           desc: 'Turn an attached image into a server emoji (prompts for name)',     example: '.ie (with image attached)' },
     { name: 'swipes',       desc: 'Add a sticker from URL or attachment (prompts for name + emoji)',   example: '.swipes (sticker url or attach)' },
-    { name: 'is',           desc: 'Turn an attached PNG into a server sticker (prompts for name)',     example: '.is (with PNG attached)' },
+    { name: 'is',           desc: 'Turn an attached PNG, JPG, WEBP, or APNG into a server sticker',    example: '.is (with image attached)' },
     { name: 'help',          desc: 'Show this command list with examples',                            example: '.help\n.help wipe' },
   ],
   voice: [

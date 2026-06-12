@@ -32,6 +32,7 @@ const PUBLIC_COMMANDS = new Set([
   'vanish', 'unvanish', 'restorevanish', 'vanishlist', 'setupvanish',
   'timeout', 'mute', 'to', 'untimeout', 'unmute', 'uto',
   'automod', 'am',
+  'question', 'q', 'questionlist', 'qlist', 'questions',
   'rr', 'reactionrole', 'reactionroles',
   'close', 'closeremove',
 ]);
@@ -80,6 +81,11 @@ function automodLinkMatches(content, blockedValue) {
   return normalizeAutomodText(content).includes(blocked);
 }
 
+function getPrefixCommandName(content) {
+  if (!String(content || '').startsWith(PREFIX)) return null;
+  return content.slice(PREFIX.length).trim().split(/\s+/)[0]?.toLowerCase() || null;
+}
+
 module.exports = {
   name: Events.MessageCreate,
   async execute(message, client) {
@@ -101,7 +107,7 @@ module.exports = {
     }
 
     // ── AUTOMOD: word + link filter ───────────────────────────────────────────
-    if (config.automod?.enabled && !isBotOwner) {
+    if (config.automod?.enabled && !['automod', 'am'].includes(getPrefixCommandName(message.content))) {
       let triggered = null;
 
       // Check banned words — matches anywhere in the message (e.g. "Yo Negus" triggers "negus")
@@ -125,8 +131,14 @@ module.exports = {
       }
 
       if (triggered) {
+        let deleteFailed = null;
         markBotDeleted(message.id);
-        await message.delete().catch(() => {});
+        try {
+          await message.delete();
+        } catch (err) {
+          deleteFailed = err;
+          console.warn(`[automod] Could not delete message ${message.id} in guild ${message.guild.id}:`, err);
+        }
 
         const logCh = config.automod.channel
           ? message.guild.channels.cache.get(config.automod.channel)
@@ -135,13 +147,14 @@ module.exports = {
         if (logCh) {
           await logCh.send({
             embeds: [new EmbedBuilder()
-              .setColor(0xED4245)
-              .setTitle('🚫 Automod — Message Deleted')
+              .setColor(deleteFailed ? 0xFEE75C : 0xED4245)
+              .setTitle(deleteFailed ? 'Automod - Delete Failed' : 'Automod - Message Deleted')
               .addFields(
                 { name: 'User',    value: `<@${message.author.id}> (${message.author.tag})`, inline: true },
                 { name: 'Channel', value: `<#${message.channel.id}>`, inline: true },
                 { name: 'Reason',  value: triggered, inline: false },
                 { name: 'Content', value: message.content.slice(0, 500) || '*empty*', inline: false },
+                ...(deleteFailed ? [{ name: 'Delete Error', value: String(deleteFailed.message || deleteFailed).slice(0, 500), inline: false }] : []),
               )
               .setTimestamp()]
           }).catch(() => {});

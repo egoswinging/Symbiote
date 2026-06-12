@@ -1,7 +1,9 @@
 const { errorEmbed, successEmbed } = require('../../utils/embeds');
 const { EmbedBuilder } = require('discord.js');
+const sharp = require('sharp');
 
 const MAX_STICKER_BYTES = 512 * 1024;
+const STICKER_IMAGE_TYPES = ['image/png', 'image/apng', 'image/jpeg', 'image/webp'];
 
 async function fetchAttachmentBuffer(url) {
   const res = await fetch(url);
@@ -16,6 +18,52 @@ async function fetchAttachmentBuffer(url) {
 function stickerFileName(name, contentType) {
   const ext = contentType === 'image/apng' ? 'apng' : 'png';
   return `${name.replace(/[^a-zA-Z0-9_-]/g, '_')}.${ext}`;
+}
+
+function normalizeContentType(contentType) {
+  const normalized = (contentType || '').split(';')[0].trim().toLowerCase();
+  return normalized === 'image/jpg' ? 'image/jpeg' : normalized;
+}
+
+function isApng(buffer) {
+  const acTL = buffer.indexOf(Buffer.from('acTL'));
+  const idat = buffer.indexOf(Buffer.from('IDAT'));
+  return acTL !== -1 && (idat === -1 || acTL < idat);
+}
+
+function detectImageContentType(buffer, contentType) {
+  const normalized = normalizeContentType(contentType);
+  if (STICKER_IMAGE_TYPES.includes(normalized)) return normalized;
+
+  if (buffer.length >= 12) {
+    if (buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]))) {
+      return isApng(buffer) ? 'image/apng' : 'image/png';
+    }
+    if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) return 'image/jpeg';
+    if (buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP') {
+      return 'image/webp';
+    }
+  }
+
+  return normalized;
+}
+
+async function prepareStickerImage(buffer, contentType) {
+  const detectedType = detectImageContentType(buffer, contentType);
+  if (!STICKER_IMAGE_TYPES.includes(detectedType)) {
+    throw new Error('Only PNG, APNG, JPG, or WEBP images are supported.');
+  }
+
+  if (detectedType === 'image/apng') {
+    return { buffer, contentType: detectedType };
+  }
+
+  const pngBuffer = await sharp(buffer, { animated: false })
+    .resize({ width: 320, height: 320, fit: 'inside', withoutEnlargement: true })
+    .png({ compressionLevel: 9, adaptiveFiltering: true })
+    .toBuffer();
+
+  return { buffer: pngBuffer, contentType: 'image/png' };
 }
 
 async function isInnerCircle(member) {
@@ -244,12 +292,10 @@ const is = {
     const url = attachment?.url || args[0];
 
     if (!url)
-      return message.reply({ embeds: [errorEmbed('Attach an image.\n**Note:** Stickers require **Level 1 boost** (2 boosts) and must be PNG or APNG.')] });
+      return message.reply({ embeds: [errorEmbed('Attach an image.\n**Note:** Stickers require **Level 1 boost** (2 boosts). PNG, APNG, JPG, and WEBP are supported.')] });
 
-    // Validate image type for stickers
-    const validSticker = ['image/png', 'image/apng'];
-    if (attachment?.contentType && !['image/png'].includes(attachment.contentType) && !attachment.contentType.includes('apng')) {
-      return message.reply({ embeds: [errorEmbed('Stickers must be **PNG or APNG** format only.')] });
+    if (attachment?.contentType && !STICKER_IMAGE_TYPES.includes(normalizeContentType(attachment.contentType))) {
+      return message.reply({ embeds: [errorEmbed('Stickers must be **PNG, APNG, JPG, or WEBP** format only.')] });
     }
 
     const name = await promptName(message, '📝 What do you want to name this sticker?\n(2-30 characters)');
@@ -266,8 +312,10 @@ const is = {
       return message.reply({ embeds: [errorEmbed(`Could not read that sticker image: ${err.message}`)] });
     }
 
-    if (!['image/png', 'image/apng'].includes(downloaded.contentType)) {
-      return message.reply({ embeds: [errorEmbed('Stickers must be **PNG or APNG**. Convert the image to PNG first, then try again.')] });
+    try {
+      downloaded = await prepareStickerImage(downloaded.buffer, downloaded.contentType || attachment?.contentType);
+    } catch (err) {
+      return message.reply({ embeds: [errorEmbed(err.message)] });
     }
 
     if (downloaded.buffer.length > MAX_STICKER_BYTES) {
