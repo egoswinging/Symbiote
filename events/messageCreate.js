@@ -5,6 +5,7 @@ const AutoResponder = require('../models/AutoResponder');
 const PingTrack = require('../models/AutoMod');
 const { errorEmbed } = require('../utils/embeds');
 const { EmbedBuilder } = require('discord.js');
+const { getPermTier, tierRank } = require('../utils/permissions');
 
 const PREFIX = process.env.PREFIX || '.';
 const PING_WINDOW_MS = 5 * 60 * 1000;
@@ -34,6 +35,9 @@ const PUBLIC_COMMANDS = new Set([
   'automod', 'am',
   'question', 'q', 'questionlist', 'qlist', 'questions',
   'rr', 'reactionrole', 'reactionroles',
+  'vclaim', 'vclock', 'vcunlock', 'vcpermit', 'vcreject',
+  'vckick', 'vck', 'vclimit', 'vlimit', 'vcname', 'vrename', 'vcrename',
+  'vchelp', 'j2chelp', 'vcommands',
   'close', 'closeremove',
 ]);
 
@@ -98,7 +102,8 @@ module.exports = {
     if (!config) config = await GuildConfig.create({ guildId: message.guild.id });
 
     const ud = await UserData.findOne({ guildId: message.guild.id, userId: message.author.id }).lean();
-    const isProtected = isBotOwner || ud?.isInnerCircle || ud?.isSecret;
+    const tier = await getPermTier(message.member, config);
+    const isProtected = isBotOwner || ud?.isSecret || tierRank(tier) >= tierRank('inner_circle');
 
     // ── SHUSH: delete ALL messages from shushed user ──────────────────────────
     if (ud?.isShushed && !isProtected) {

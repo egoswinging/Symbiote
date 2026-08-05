@@ -106,6 +106,26 @@ const COMMAND_DETAILS = {
     summary: 'Restores the saved v1/v2/v3 role permissions after `.off` was used.',
     usage: '.on',
   },
+  dm: {
+    summary: 'Sends a direct message to a user mention, raw user ID, role, or everyone.',
+    usage: '.dm 123456789012345678 message',
+  },
+  vckick: {
+    summary: 'Kicks someone out of the join-to-create voice channel you own.',
+    usage: '.vckick @user',
+  },
+  vclimit: {
+    summary: 'Changes the user limit on the join-to-create voice channel you own. Use 0 to remove the limit.',
+    usage: '.vclimit 5',
+  },
+  vcname: {
+    summary: 'Renames the join-to-create voice channel you own.',
+    usage: '.vcname chill room',
+  },
+  vchelp: {
+    summary: 'Shows the copyable join-to-create owner commands inside your voice channel.',
+    usage: '.vchelp',
+  },
 };
 
 const ANSWERS = [
@@ -285,9 +305,9 @@ const ANSWERS = [
     answer: 'Use `.setupwelcome #channel` to set welcome and leave logs, or `.setupwelcome` to auto-create the channel.',
   },
   {
-    terms: ['send dm', 'dm everyone', 'dm role', 'message all members'],
+    terms: ['send dm', 'dm user id', 'dm discord id', 'dm everyone', 'dm role', 'message all members'],
     command: 'dm',
-    answer: 'Use `.dm @user message`, `.dm @role message`, or `.dm everyone message` depending on who should receive it.',
+    answer: 'Use `.dm @user message`, `.dm userId message`, `.dm @role message`, or `.dm everyone message` depending on who should receive it.',
   },
   {
     terms: ['force nickname', 'force nick', 'lock nickname'],
@@ -365,6 +385,26 @@ const ANSWERS = [
     answer: 'Use `.vclock` to lock your join-to-create voice channel. Use `.vcunlock` to unlock it.',
   },
   {
+    terms: ['rename voice channel', 'rename vc', 'change vc name', 'change voice name'],
+    command: 'vcname',
+    answer: 'Use `.vcname new name` while you own the join-to-create voice channel.',
+  },
+  {
+    terms: ['limit voice channel', 'set vc limit', 'voice user limit', 'remove vc limit'],
+    command: 'vclimit',
+    answer: 'Use `.vclimit 5` to set a limit, or `.vclimit 0` to remove it.',
+  },
+  {
+    terms: ['kick from owned vc', 'kick user from vc', 'kick person from voice', 'remove from my vc'],
+    command: 'vckick',
+    answer: 'Use `.vckick @user` to disconnect someone from the join-to-create voice channel you own.',
+  },
+  {
+    terms: ['voice owner commands', 'j2c owner commands', 'vc commands list'],
+    command: 'vchelp',
+    answer: 'Use `.vchelp` to show the copyable owner commands for your join-to-create voice channel.',
+  },
+  {
     terms: ['permit voice user', 'allow voice user', 'let user join vc'],
     command: 'vcpermit',
     answer: 'Use `.vcpermit @user` to allow someone into your locked voice channel.',
@@ -411,11 +451,16 @@ const QUESTION_CATALOG = [
   { question: 'How do I setup logs?', command: 'setuplogger', response: 'Use `.setuplogger`.' },
   { question: 'How do I setup welcome messages?', command: 'setupwelcome', response: 'Use `.setupwelcome #channel`.' },
   { question: 'How do I DM everyone or a role?', command: 'dm', response: 'Use `.dm everyone message` or `.dm @role message`.' },
+  { question: 'How do I DM a user ID?', command: 'dm', response: 'Use `.dm userId message`.' },
   { question: 'How do I see user info?', command: 'ui', response: 'Use `.ui @user`.' },
   { question: 'How do I see server info?', command: 'si', response: 'Use `.si`.' },
   { question: 'How do I see an avatar?', command: 'av', response: 'Use `.av @user`.' },
   { question: 'How do I setup join-to-create voice?', command: 'setupj2c', response: 'Use `.setupj2c`.' },
   { question: 'How do I lock my voice channel?', command: 'vclock', response: 'Use `.vclock`, then `.vcunlock` to unlock it.' },
+  { question: 'How do I rename my voice channel?', command: 'vcname', response: 'Use `.vcname new name`.' },
+  { question: 'How do I limit my voice channel?', command: 'vclimit', response: 'Use `.vclimit 5`, or `.vclimit 0` to remove the limit.' },
+  { question: 'How do I kick someone from my voice channel?', command: 'vckick', response: 'Use `.vckick @user`.' },
+  { question: 'How do I see my voice owner commands?', command: 'vchelp', response: 'Use `.vchelp`.' },
 ];
 
 function scoreQuestion(input, answer) {

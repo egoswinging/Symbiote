@@ -5,9 +5,9 @@ const { EmbedBuilder } = require('discord.js');
 module.exports = {
   name: 'dm',
   category: 'utility',
-  description: 'DM everyone, a role, or one member',
-  usage: '.dm <message> OR .dm @user <message> OR .dm @role <message> OR .dm everyone <message>',
-  example: '.dm @John Check DMs\n.dm @VIP Check your perks!\n.dm everyone Big announcement!',
+  description: 'DM everyone, a role, a member mention, or a user ID',
+  usage: '.dm <message> OR .dm @user <message> OR .dm userId <message> OR .dm @role <message> OR .dm everyone <message>',
+  example: '.dm @John Check DMs\n.dm 123456789012345678 Check DMs\n.dm @VIP Check your perks!\n.dm everyone Big announcement!',
 
   async execute(message, args, client, config) {
     const ownerIds = (process.env.OWNER_IDS || '').split(',').map(s => s.trim());
@@ -26,6 +26,7 @@ module.exports = {
         '`.dm <message>` - DM everyone\n' +
         '`.dm everyone <message>` - DM everyone\n' +
         '`.dm @user <message>` - DM one user\n' +
+        '`.dm userId <message>` - DM one user by ID\n' +
         '`.dm @role <message>` - DM only that role'
       )] });
     }
@@ -37,7 +38,7 @@ module.exports = {
 
     if (firstArg.toLowerCase() === 'everyone') {
       content = args.slice(1).join(' ');
-    } else if (firstArg.startsWith('<@') && !firstArg.startsWith('<@&')) {
+    } else if ((firstArg.startsWith('<@') && !firstArg.startsWith('<@&')) || /^\d{17,20}$/.test(firstArg)) {
       targetMember = await resolveMember(message.guild, firstArg);
       content = args.slice(1).join(' ');
     } else if (firstArg.startsWith('<@&') || message.mentions.roles.size > 0) {
@@ -51,7 +52,7 @@ module.exports = {
       return message.reply({ embeds: [errorEmbed('You need to provide a message after the target.')] });
     }
 
-    if (firstArg.startsWith('<@') && !firstArg.startsWith('<@&') && !targetMember) {
+    if (((firstArg.startsWith('<@') && !firstArg.startsWith('<@&')) || /^\d{17,20}$/.test(firstArg)) && !targetMember) {
       return message.reply({ embeds: [errorEmbed('Member not found.')] });
     }
 

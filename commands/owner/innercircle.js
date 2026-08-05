@@ -32,7 +32,7 @@ const innercirclelist = {
   async execute(message, args, client, config) {
     const ud = await UserData.findOne({ guildId: message.guild.id, userId: message.author.id }).lean();
     const tier = await getPermTier(message.member, config);
-    const canView = isBotOwner(message.author.id) || tier === 'close' || ud?.isInnerCircle;
+    const canView = isBotOwner(message.author.id) || tierRank(tier) >= tierRank('inner_circle') || ud?.isInnerCircle;
     if (!canView)
       return message.reply({ embeds: [errorEmbed('Only **inner circle** or higher can view this.')] });
     const list = await UserData.find({ guildId: message.guild.id, isInnerCircle: true });
@@ -59,8 +59,7 @@ const removeinnercircle = {
   usage: '.removeinnercircle @user', example: '.removeinnercircle @John',
   async execute(message, args, client, config) {
     const tier = await getPermTier(message.member, config);
-    const hasBetterRole = config.betterRoleId && message.member.roles.cache.has(config.betterRoleId);
-    const canRemove = isBotOwner(message.author.id) || tier === 'close' || hasBetterRole;
+    const canRemove = isBotOwner(message.author.id) || tierRank(tier) >= tierRank('better');
     if (!canRemove)
       return message.reply({ embeds: [errorEmbed('You need **✗ role**, **close**, or **bot owner** to remove inner circle.')] });
     const target = await resolveMember(message.guild, args[0]);

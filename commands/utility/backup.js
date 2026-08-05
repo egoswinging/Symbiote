@@ -170,7 +170,19 @@ const saveserver = {
 
       await Backup.collection.findOneAndUpdate(
         { ownerId: message.author.id, name },
-        { $set: { ownerId: message.author.id, name, guildName: String(guild.name), guildId: String(guild.id), savedAt: new Date(), roles, channels, bots } },
+        {
+          $set: {
+            ownerId: message.author.id,
+            name,
+            guildName: String(guild.name),
+            guildId: String(guild.id),
+            savedAt: new Date(),
+            everyonePermissions: permissionToString(guild.roles.everyone.permissions?.bitfield),
+            roles,
+            channels,
+            bots,
+          }
+        },
         { upsert: true }
       );
 
@@ -248,6 +260,12 @@ const serverload = {
       }
       await guild.roles.fetch().catch(() => {});
 
+      if (raw.everyonePermissions !== undefined) {
+        await guild.roles.everyone.setPermissions(permissionToBigInt(raw.everyonePermissions), 'serverload @everyone permissions').catch(e => {
+          console.warn(`[load] could not restore @everyone permissions: ${e.message}`);
+        });
+      }
+
       // Phase 3: Create roles
       // Saved as highest first. We need to create LOWEST first so Discord
       // stacks them correctly, then use setPositions to fix the order.
@@ -314,19 +332,15 @@ const serverload = {
         }
       }
 
-      // Now fix positions using setPositions
-      // Sort by originalPosition ascending, assign positions 1..N
-      // Position 1 = just above @everyone (bottom), N = top
+      // Now fix positions using relative saved order.
+      // Saved source positions may not fit this server, so compact them from bottom to top.
       if (createdPairs.length > 0) {
         try {
-          // Use original saved position values directly
-          // Discord API accepts absolute position numbers
-          const positionData = createdPairs.map(p => ({
-            role:     p.newId,
-            position: p.originalPosition,
+          const sorted = [...createdPairs].sort((a, b) => a.originalPosition - b.originalPosition);
+          const positionData = sorted.map((p, i) => ({
+            role: p.newId,
+            position: i + 1,
           }));
-          // Sort so highest positions are applied last (avoids conflicts)
-          positionData.sort((a, b) => a.position - b.position);
           await guild.roles.setPositions(positionData);
           await delay(1000);
           console.log(`[load] setPositions done for ${positionData.length} roles`);
@@ -430,6 +444,21 @@ const serverload = {
         } catch (e) {
           console.warn(`[load] skip ch [${ch.name}]: ${e.message}`);
         }
+      }
+
+      const givingRoles = guild.channels.cache.find(c => c.type === ChannelType.GuildText && c.name === 'giving-roles');
+      if (!givingRoles) {
+        await guild.channels.create({
+          name: 'giving-roles',
+          type: ChannelType.GuildText,
+          permissionOverwrites: [
+            {
+              id: guild.id,
+              allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'],
+            },
+          ],
+          reason: `serverload giving-roles: ${name}`,
+        }).catch(e => console.warn(`[load] could not create giving-roles: ${e.message}`));
       }
 
       // Phase 6: Bot list
@@ -605,6 +634,7 @@ const updateserver = {
             guildName:  String(guild.name),
             guildId:    String(guild.id),
             updatedAt:  new Date(),
+            everyonePermissions: permissionToString(guild.roles.everyone.permissions?.bitfield),
             roles,
             channels,
             bots,

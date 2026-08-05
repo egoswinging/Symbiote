@@ -18,6 +18,8 @@ async function getPermTier(member, config = null) {
 
   // Close whitelist — elite inner circle, above everything except bot_owner
   if ((config.closeWhitelist || []).includes(member.id)) return 'close';
+  if ((config.betterWhitelist || []).includes(member.id)) return 'better';
+  if (config.betterRoleId && roleIds.includes(config.betterRoleId)) return 'better';
 
   // Inner circle — full control, below bot_owner and close only
   if (ud?.isInnerCircle) return 'inner_circle';
@@ -33,9 +35,10 @@ async function getPermTier(member, config = null) {
 }
 
 const TIER_RANK = {
-  bot_owner:    8,
-  close:        7,
-  owner:        6,
+  bot_owner:    9,
+  close:        8,
+  owner:        7,
+  better:       6,
   inner_circle: 5,
   v1:           4,
   v2:           3,

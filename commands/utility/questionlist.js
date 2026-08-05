@@ -24,6 +24,7 @@ module.exports = {
     const items = QUESTION_CATALOG.slice(start, start + pageSize);
     const lines = items.map(item => [
       `**Q:** ${item.question}`,
+      `**Copy:** \`${PREFIX}question ${item.question}\``,
       `**Bot:** ${item.response}`,
       `**Command:** \`${PREFIX}${item.command}\``,
     ].join('\n'));

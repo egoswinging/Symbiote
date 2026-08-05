@@ -4,6 +4,7 @@ const { logAction } = require('../../utils/logger');
 const GuildConfig = require('../../models/GuildConfig');
 const UserData = require('../../models/UserData');
 const { EmbedBuilder, PermissionsBitField } = require('discord.js');
+const { getPermTier, tierRank } = require('../../utils/permissions');
 
 function isBotOwner(id) {
   return (process.env.OWNER_IDS || '').split(',').map(s => s.trim()).includes(id);
@@ -53,8 +54,8 @@ const ot = {
 
   async execute(message, args, client, config) {
     // Inner circle or bot owner only
-    const ud = await UserData.findOne({ guildId: message.guild.id, userId: message.author.id }).lean();
-    if (!isBotOwner(message.author.id) && !ud?.isInnerCircle)
+    const tier = await getPermTier(message.member, config);
+    if (!isBotOwner(message.author.id) && tierRank(tier) < tierRank('inner_circle'))
       return message.reply({ embeds: [errorEmbed('Only **inner circle** members can give the ✱ role.')] });
 
     const target = args[0] ? await resolveMember(message.guild, args[0]) : message.member;
@@ -97,8 +98,8 @@ const removeot = {
   example: '.removeot @John',
 
   async execute(message, args, client, config) {
-    const ud = await UserData.findOne({ guildId: message.guild.id, userId: message.author.id }).lean();
-    if (!isBotOwner(message.author.id) && !ud?.isInnerCircle)
+    const tier = await getPermTier(message.member, config);
+    if (!isBotOwner(message.author.id) && tierRank(tier) < tierRank('inner_circle'))
       return message.reply({ embeds: [errorEmbed('Only **inner circle** members can remove the ✱ role.')] });
 
     const target = await resolveMember(message.guild, args[0]);
@@ -175,10 +176,10 @@ const removebetter = {
   example: '.removebetter @John',
 
   async execute(message, args, client, config) {
-    const isBetter = isBotOwner(message.author.id) ||
-      idInList(config.betterWhitelist, message.author.id);
-    if (!isBetter)
-      return message.reply({ embeds: [errorEmbed('You are not in the **better whitelist**.')] });
+    const tier = await getPermTier(message.member, config);
+    const canRemoveBetter = isBotOwner(message.author.id) || tierRank(tier) >= tierRank('close');
+    if (!canRemoveBetter)
+      return message.reply({ embeds: [errorEmbed('Only **close** members or the **bot owner** can remove better members.')] });
 
     const target = await resolveMember(message.guild, args[0]);
     if (!target) return message.reply({ embeds: [errorEmbed('Member not found.')] });

@@ -218,4 +218,4 @@ const secretlist = {
   },
 };
 
-module.exports = [add, remove, them, st, unst, hidden, stlist, secret, secretadd, secretremove, secretlist];
+module.exports = [st, unst, hidden, stlist, secret, secretadd, secretremove, secretlist];

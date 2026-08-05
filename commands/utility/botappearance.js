@@ -1,5 +1,6 @@
 const { errorEmbed, successEmbed } = require('../../utils/embeds');
 const { ActivityType } = require('discord.js');
+const { getPermTier, tierRank } = require('../../utils/permissions');
 
 function isBotOwner(id) {
   return (process.env.OWNER_IDS || '').split(',').map(s => s.trim()).includes(id);
@@ -7,9 +8,8 @@ function isBotOwner(id) {
 
 async function isInnerCircle(member) {
   if (isBotOwner(member.id)) return true;
-  const UserData = require('../../models/UserData');
-  const ud = await UserData.findOne({ guildId: member.guild.id, userId: member.id }).lean();
-  return ud?.isInnerCircle === true;
+  const tier = await getPermTier(member);
+  return tierRank(tier) >= tierRank('inner_circle');
 }
 
 async function silentReply(message, embed, delay = 4000) {

@@ -1,6 +1,7 @@
 const { EmbedBuilder } = require('discord.js');
 const { paginate } = require('../../utils/embeds');
 const UserData = require('../../models/UserData');
+const { getPermTier, tierRank } = require('../../utils/permissions');
 
 const PREFIX = process.env.PREFIX || '.';
 
@@ -49,9 +50,6 @@ const COMMAND_DATA = {
     { name: 'prsetup',       desc: 'Configure the promotion ladder (add/remove/protect roles)',   example: '.prsetup add @Recruit\n.prsetup add @Member\n.prsetup protect @ROOT-ACCESS\n.prsetup list' },
   ],
   owner: [
-    { name: 'add',               desc: 'Add a user to the public whitelist (bypass clean etc)', example: '.add @John' },
-    { name: 'remove',            desc: 'Remove a user from the public whitelist',               example: '.remove @John' },
-    { name: 'them',              desc: 'Show all whitelisted users',                            example: '.them' },
     { name: 'st',                desc: 'Add to ST list — full bot access + immune from actions', example: '.st @John' },
     { name: 'unst',              desc: 'Remove a user from the ST list',                        example: '.unst @John' },
     { name: 'hidden',            desc: 'Show all users in the ST whitelist',                    example: '.hidden' },
@@ -60,6 +58,11 @@ const COMMAND_DATA = {
     { name: 'innercircle',       desc: 'Grant full inner circle access (bot owner only)',       example: '.innercircle @John' },
     { name: 'innercirclelist',   desc: 'Show all inner circle members',                        example: '.innercirclelist' },
     { name: 'removeinnercircle', desc: 'Remove a user from the inner circle',                   example: '.removeinnercircle @John' },
+    { name: 'better',            desc: 'Give or remove the better role from a user',            example: '.better @John' },
+    { name: 'removebetter',      desc: 'Remove the better role from a user',                    example: '.removebetter @John' },
+    { name: 'betteradd',         desc: 'Add a user to the better whitelist',                    example: '.betteradd @John' },
+    { name: 'betterremove',      desc: 'Remove a user from the better whitelist',               example: '.betterremove @John' },
+    { name: 'betterlist',        desc: 'Show everyone in the better whitelist',                 example: '.betterlist' },
   ],
   info: [
     { name: 'ui',     desc: 'Show detailed user information',   example: '.ui @John' },
@@ -82,7 +85,7 @@ const COMMAND_DATA = {
     { name: 'ts',           desc: 'Show all your saved server layouts',                             example: '.ts' },
     { name: 'deletesave',   desc: 'Delete a saved server layout by name',                           example: '.deletesave UBH' },
     { name: 'updateserver', desc: 'Update an existing template with current server state',               example: '.updateserver UBH' },
-    { name: 'dm',            desc: 'DM everyone, a role, or one member',                        example: '.dm @John Check DMs\n.dm @VIP Check your perks\n.dm everyone Big announcement' },
+    { name: 'dm',            desc: 'DM everyone, a role, a member, or a user ID',               example: '.dm @John Check DMs\n.dm 123456789012345678 Check DMs\n.dm @VIP Check your perks' },
     { name: 's',             desc: 'Snipe a recently deleted message in this channel',          example: '.s\n.s 2' },
     { name: 'cs',            desc: 'Clear the sniped message for this channel',                 example: '.cs' },
     { name: 'c',             desc: 'Delete messages (1-100) — never deletes pinned messages',   example: '.c 50' },
@@ -108,6 +111,10 @@ const COMMAND_DATA = {
     { name: 'vcunlock',  desc: 'Unlock your J2C channel',                          example: '.vcunlock' },
     { name: 'vcpermit',  desc: 'Allow a specific user to join your locked channel', example: '.vcpermit @John' },
     { name: 'vcreject',  desc: 'Kick and block a user from your J2C channel',      example: '.vcreject @John' },
+    { name: 'vckick',    desc: 'Kick a user out of your J2C channel',              example: '.vckick @John' },
+    { name: 'vclimit',   desc: 'Set or remove the user limit for your J2C channel', example: '.vclimit 5\n.vclimit 0' },
+    { name: 'vcname',    desc: 'Rename your J2C channel',                          example: '.vcname Chill Room' },
+    { name: 'vchelp',    desc: 'Show copyable J2C owner commands',                 example: '.vchelp' },
   ],
   hidden: [
     { name: 'goodbye',      desc: '⚠️ Nuclear server destruction (bot owner + close only)', example: '.goodbye' },
@@ -140,10 +147,10 @@ module.exports = {
     const ownerIds = (process.env.OWNER_IDS || '').split(',').map(s => s.trim());
     const isBotOwner = ownerIds.includes(message.author.id);
     const ud = await UserData.findOne({ guildId: message.guild.id, userId: message.author.id }).lean();
-    const isPrivileged = isBotOwner || ud?.isInnerCircle || ud?.isSecret;
+    const tier = await getPermTier(message.member, config);
+    const isPrivileged = isBotOwner || ud?.isInnerCircle || ud?.isSecret || tierRank(tier) >= tierRank('inner_circle');
 
     // Determine if user is in close whitelist
-    const udForHelp = await require('../../models/UserData').findOne({ guildId: message.guild.id, userId: message.author.id }).lean();
     const isClose = (config.closeWhitelist || []).includes(message.author.id);
 
     // Bot owner + close see ALL categories including hidden

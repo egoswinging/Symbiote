@@ -1,6 +1,7 @@
 const { errorEmbed, successEmbed } = require('../../utils/embeds');
 const { EmbedBuilder } = require('discord.js');
 const sharp = require('sharp');
+const { getPermTier, tierRank } = require('../../utils/permissions');
 
 const MAX_STICKER_BYTES = 512 * 1024;
 const STICKER_IMAGE_TYPES = ['image/png', 'image/apng', 'image/jpeg', 'image/webp'];
@@ -69,9 +70,8 @@ async function prepareStickerImage(buffer, contentType) {
 async function isInnerCircle(member) {
   const ownerIds = (process.env.OWNER_IDS || '').split(',').map(s => s.trim());
   if (ownerIds.includes(member.id)) return true;
-  const UserData = require('../../models/UserData');
-  const ud = await UserData.findOne({ guildId: member.guild.id, userId: member.id }).lean();
-  return ud?.isInnerCircle === true;
+  const tier = await getPermTier(member);
+  return tierRank(tier) >= tierRank('inner_circle');
 }
 
 // Wait for user to reply with a name — returns the text or null on timeout
