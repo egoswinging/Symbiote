@@ -33,7 +33,6 @@ const PUBLIC_COMMANDS = new Set([
   'vanish', 'unvanish', 'restorevanish', 'vanishlist', 'setupvanish',
   'timeout', 'mute', 'to', 'untimeout', 'unmute', 'uto',
   'automod', 'am',
-  'question', 'q', 'questionlist', 'qlist', 'questions',
   'rr', 'reactionrole', 'reactionroles',
   'vclaim', 'vclock', 'vcunlock', 'vcpermit', 'vcreject',
   'vckick', 'vck', 'vclimit', 'vlimit', 'vcname', 'vrename', 'vcrename',
@@ -105,17 +104,17 @@ module.exports = {
     const tier = await getPermTier(message.member, config);
     const isProtected = isBotOwner || ud?.isSecret || tierRank(tier) >= tierRank('inner_circle');
 
-    // ── SHUSH: delete ALL messages from shushed user ──────────────────────────
+    // SHUSH: delete ALL messages from shushed user
     if (ud?.isShushed && !isProtected) {
       markBotDeleted(message.id);
       return message.delete().catch(() => {});
     }
 
-    // ── AUTOMOD: word + link filter ───────────────────────────────────────────
+    // AUTOMOD: word + link filter
     if (config.automod?.enabled && !['automod', 'am'].includes(getPrefixCommandName(message.content))) {
       let triggered = null;
 
-      // Check banned words — matches anywhere in the message (e.g. "Yo Negus" triggers "negus")
+      // Check banned words with safe word boundaries.
       for (const word of config.automod.words || []) {
         const w = normalizeAutomodText(word);
         if (automodWordMatches(message.content, w)) {
@@ -168,7 +167,7 @@ module.exports = {
       }
     }
 
-    // ── @EVERYONE PING RATE LIMIT ─────────────────────────────────────────────
+    // @EVERYONE PING RATE LIMIT
     if (message.mentions.everyone && !isProtected) {
       const memberRoles = message.member.roles.cache.map(r => r.id);
       const isAllowed = (config.allowedPingRoles || []).some(id => memberRoles.includes(id));
@@ -194,7 +193,7 @@ module.exports = {
             await logCh.send({
               embeds: [new EmbedBuilder()
                 .setColor(0xED4245)
-                .setTitle('⚠️ @everyone Ping Abuse')
+                .setTitle('Warning: @everyone Ping Abuse')
                 .addFields(
                   { name: 'User',    value: `<@${message.author.id}> (${message.author.tag})`, inline: true },
                   { name: 'Channel', value: `<#${message.channel.id}>`, inline: true },
@@ -207,7 +206,7 @@ module.exports = {
       }
     }
 
-    // ── CLEAN MODE ────────────────────────────────────────────────────────────
+    // CLEAN MODE
     if (client.cleanChannels.has(message.channel.id)) {
       const exempt = isProtected || ud?.isWhitelisted;
       if (!exempt && !message.content.startsWith(PREFIX)) {
@@ -216,7 +215,7 @@ module.exports = {
       }
     }
 
-    // ── AUTO RESPONDER — exact match only ─────────────────────────────────────
+    // AUTO RESPONDER: exact match only
     if (!message.content.startsWith(PREFIX)) {
       const trimmed = message.content.trim().toLowerCase();
       const responders = await AutoResponder.find({ guildId: message.guild.id }).lean();
@@ -229,7 +228,7 @@ module.exports = {
       return;
     }
 
-    // ── PREFIX COMMAND ROUTER ─────────────────────────────────────────────────
+    // PREFIX COMMAND ROUTER
     const args = message.content.slice(PREFIX.length).trim().split(/\s+/);
     const commandName = args.shift().toLowerCase();
     if (!commandName) return;
@@ -242,7 +241,7 @@ module.exports = {
       return message.reply({ embeds: [errorEmbed('You are **blacklisted** from using this bot.')] });
     }
 
-    // Whitelist gate — only ST, inner circle, bot owner can use non-public commands
+    // Whitelist gate: only ST, inner circle, bot owner can use non-public commands
     if (!isProtected && !PUBLIC_COMMANDS.has(commandName)) {
       return;
     }
@@ -255,3 +254,4 @@ module.exports = {
     }
   },
 };
+

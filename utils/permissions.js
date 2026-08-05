@@ -16,12 +16,12 @@ async function getPermTier(member, config = null) {
 
   const ud = await UserData.findOne({ guildId: member.guild.id, userId: member.id }).lean();
 
-  // Close whitelist — elite inner circle, above everything except bot_owner
+  // Close whitelist: elite inner circle, above everything except bot_owner
   if ((config.closeWhitelist || []).includes(member.id)) return 'close';
   if ((config.betterWhitelist || []).includes(member.id)) return 'better';
   if (config.betterRoleId && roleIds.includes(config.betterRoleId)) return 'better';
 
-  // Inner circle — full control, below bot_owner and close only
+  // Inner circle: full control, below better/owner/close/bot_owner
   if (ud?.isInnerCircle) return 'inner_circle';
 
   if (config.ownerRole && roleIds.includes(config.ownerRole)) return 'owner';
@@ -50,12 +50,12 @@ const TIER_RANK = {
 function tierRank(tier) { return TIER_RANK[tier] ?? 0; }
 
 async function canTarget(actorMember, victimMember, config = null) {
-  // .st users cannot be targeted unless actor is inner_circle or bot_owner
+  // ST users cannot be targeted unless the actor is inner circle tier or higher.
   const vud = await UserData.findOne({ guildId: victimMember.guild.id, userId: victimMember.id }).lean();
   const aud = await UserData.findOne({ guildId: actorMember.guild.id, userId: actorMember.id }).lean();
   const actorTier = await getPermTier(actorMember, config);
 
-  if (vud?.isSecret && actorTier !== 'bot_owner' && actorTier !== 'inner_circle') return false;
+  if (vud?.isSecret && tierRank(actorTier) < tierRank('inner_circle')) return false;
 
   const [aT, vT] = await Promise.all([
     Promise.resolve(actorTier),
@@ -70,3 +70,4 @@ async function requireTier(member, minTier, config = null) {
 }
 
 module.exports = { getPermTier, tierRank, canTarget, requireTier };
+
