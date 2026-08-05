@@ -287,6 +287,7 @@ const serverload = {
       const leftoverRolesByName = new Map();
       for (const role of guild.roles.cache.values()) {
         if (!role || role.id === guild.id || role.managed) continue;
+        if (role.position >= myTop) continue;
         if (!leftoverRolesByName.has(role.name)) leftoverRolesByName.set(role.name, []);
         leftoverRolesByName.get(role.name).push(role);
       }
